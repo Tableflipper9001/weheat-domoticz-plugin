@@ -49,25 +49,44 @@
     </params>
 </plugin>
 """
-import DomoticzEx as Domoticz
 
-class BasePlugin:
+import DomoticzEx as Domoticz
+#import asyncio
+#import datetime
+#from keycloak import KeycloakOpenID  # install with pip install python-keycloak
+#from weheat import ApiClient, Configuration, HeatPumpApi, HeatPumpLogApi, EnergyLogApi, UserApi
+
+# global constants
+sAuthUrl = 'https://auth.weheat.nl/auth/'
+sApiUrl = 'https://api.weheat.nl'
+sRealmName = 'WeHeat'
+sCliendId = 'WeheatCommunityAPI'
+sClientSecret = ''
+
+class WeHeatPlugin:
     enabled = False
+    mHeatPumpUuid = ''
+
     def __init__(self):
-        #self.var = 123
         return
 
     def onStart(self):
-        Domoticz.Log("onStart called")
+        Domoticz.Log("WeHeat plugin is starting")
+
+        # Create all sensors if they do not exist
+        createDevice("Actual room temperature", "Temp", "t_room")
+
+        # Handle OAuth2 authentication with WeHeat backend and get heatpump UUID
+
+        # Schedule a heartbeat to get sensor values
+
+        # Dump config
         if Parameters["Mode6"] != "0":
             Domoticz.Debugging(int(Parameters["Mode6"]))
             DumpConfigToLog()
 
-        #if (not "Dimmer" in Devices):
-        #    Domoticz.Unit(Name="Dimmer", Unit=2, TypeName="Dimmer", DeviceID="Dimmer").Create()
-
     def onStop(self):
-        Domoticz.Log("onStop called")
+        Domoticz.Log("WeHeat plugin is stopping")
 
     def onConnect(self, Connection, Status, Description):
         Domoticz.Log("onConnect called")
@@ -87,8 +106,14 @@ class BasePlugin:
     def onHeartbeat(self):
         Domoticz.Log("onHeartbeat called")
 
+    def createDevice(self, Name, Type, ExternalId)
+         if (not Name in Devices):
+             id = len(Devices) + 1
+             Domoticz.Log("Creating new sensor '" + Name + "' (" + id + ") of type '" + Type + "' with external id '" + ExternalId + "'")
+             Domoticz.Device(Name=Name, Unit=id, TypeName=Type, DeviceId=ExternalId).Create()
+
 global _plugin
-_plugin = BasePlugin()
+_plugin = WeHeatPlugin()
 
 def onStart():
     global _plugin
