@@ -1,25 +1,39 @@
-# Basic Python Plugin Example
+# Domoticz plugin for WeHeat devices
 #
-# Author: GizMoCuz
+# Author: Jordy Knubben
 #
 """
-<plugin key="BasePlug" name="Basic Python Plugin Example" author="gizmocuz" version="1.0.0" wikilink="https://wiki.domoticz.com/Plugins" externallink="https://www.google.com/">
+<plugin key="WeHeat" name="WeHeat" author="Jordy Knubben" version="0.0.1" wikilink="https://wiki.domoticz.com/Plugins" externallink="https://www.weheat.nl/">
     <description>
-        <h2>Plugin Title</h2><br/>
-        Overview...
+        <h2>WeHeat</h2><br/>
+        A plugin that reads out information about WeHeat heat pumps.<br/>
+        Uses the official python client application to access the WeHeat backend TODO link.<br/>
+        TODO: determine the throttle limit on the amount of requests
         <h3>Features</h3>
         <ul style="list-style-type:square">
-            <li>Feature one...</li>
-            <li>Feature two...</li>
+            <li>OpenTherm, hybrid system only</li>
+            <li>Read out some sensors, see devices</li>
         </ul>
         <h3>Devices</h3>
         <ul style="list-style-type:square">
-            <li>Device Type - What it does...</li>
+            <li>Temperature - Actual room temperature</li>
+            <li>Temperature - Room temperature setpoint</li>
+            <li>Temperature - House water temperature</li>
+            <li>Temperature - Water temperawture house setpoint</li>
+            <li>Temperature - Heatpump temperature out</li>
+            <li>Temperature - Heatpump temperature in</li>
+            <li>Percentage  - COP</li>
+            <li>Power - Consumed power</li>
+            <li>Power - Heat power</li>
+            <li>Power - Heat power air</li>
+            <li>Percentage - Compressor usage</li>
         </ul>
         <h3>Configuration</h3>
-        Configuration options...
+        TODO config options
     </description>
     <params>
+        <param field="Username" label="Username" required="true"/>
+        <param field="Password" label="Password" required="true" password="true"/>
         <param field="Mode6" label="Debug" width="150px">
             <options>
                 <option label="None" value="0"  default="true" />
