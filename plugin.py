@@ -51,10 +51,10 @@
 """
 
 import DomoticzEx as Domoticz
-#import asyncio
-#import datetime
-#from keycloak import KeycloakOpenID  # install with pip install python-keycloak
-#from weheat import ApiClient, Configuration, HeatPumpApi, HeatPumpLogApi, EnergyLogApi, UserApi
+import asyncio
+import datetime
+from keycloak import KeycloakOpenID
+from weheat import ApiClient, Configuration, HeatPumpApi, HeatPumpLogApi, EnergyLogApi, UserApi
 
 # global constants
 sAuthUrl = 'https://auth.weheat.nl/auth/'
@@ -65,18 +65,40 @@ sClientSecret = ''
 
 class WeHeatPlugin:
     enabled = False
-    mHeatPumpUuid = ''
 
     def __init__(self):
+        self._AccessToken = ''
+        self._RefreshToken = ''
+        self._HeatPumpUuid = ''
+        self._KeyCloakOpenId: KeycloakOpenID | None = None
         return
 
     def onStart(self):
         Domoticz.Log("WeHeat plugin is starting")
 
         # Create all sensors if they do not exist
-        createDevice("Actual room temperature", "Temp", "t_room")
+        # createDevice("Actual room temperature", "Temp", "t_room")
 
         # Handle OAuth2 authentication with WeHeat backend and get heatpump UUID
+        self._KeyCloakOpenId = KeycloakOpenID(server_url=sAuthUrl,
+                                              client_id=sCliendId,
+                                              realm_name=sRealmName,
+                                              client_secret_key=sClientSecret)
+	token_response = self._KeyCloakOpenId.token(Parameters["Username"], Parameters["Password"])
+        self._AccessToken = token_response['access_token']
+        self._RefreshToken = token_response['refresh_token']
+        self._KeyCloakOpenId.logout(self._RefreshToken)
+	config = Configuration(host=sApiUrl, access_token=self._AccessToken)
+        async with ApiClient(configuration=config) as client:
+            response = await HeatPumpApi(client).api_v1_heat_pumps_get_with_http_info()
+            if response.status_code == 200:
+                 Domoticz.Debug(f'Detected heat pump: {response.data}')
+                 if len(response.data) > 0:
+                     mHeatPumpUuid = response.data[0].id
+                     Domoticz.Log("Using heatpump UUID '" + mHeatPumpUuid + "'")
+            else
+                 Domoticz.Error('Failed to connect to WeHeat API with HTTP response: ' +  response.status_code)
+                 # Stop / restart the plugin
 
         # Schedule a heartbeat to get sensor values
 
