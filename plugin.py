@@ -16,16 +16,16 @@
         </ul>
         <h3>Devices</h3>
         <ul style="list-style-type:square">
-            <li>Temperature - Actual room temperature</li>
+            <li>Temperature - Room temperature</li>
             <li>Temperature - Room temperature setpoint</li>
-            <li>Temperature - House water temperature</li>
-            <li>Temperature - Water temperawture house setpoint</li>
-            <li>Temperature - Heatpump temperature out</li>
-            <li>Temperature - Heatpump temperature in</li>
+            <li>Temperature - Heating flow temperature</li>
+            <li>Temperature - Heating flow temperature setpoint</li>
+            <li>Temperature - Heatpump flow temperature</li>
+            <li>Temperature - Heatpump return temperature</li>
             <li>Percentage  - COP</li>
-            <li>Power - Consumed power</li>
+            <li>Power - Electrical power</li>
             <li>Power - Heat power</li>
-            <li>Power - Heat power air</li>
+            <li>Power - Power from air</li>
             <li>Percentage - Compressor usage</li>
         </ul>
         <h3>Configuration</h3>
@@ -123,7 +123,17 @@ class WeHeatPlugin:
         Domoticz.Log('WeHeat plugin is starting')
 
         # Create all sensors if they do not exist
-        # createDevice("Actual room temperature", "Temp", "t_room")
+        createDevice("Room temperature"                 , "Temp"      , "t_room")
+        createDevice("Room temperature setpoint"        , "Temp"      , "t_room_target")
+        createDevice("Heating flow temperature"         , "Temp"      , "t_water_house_in")
+        createDevice("Heating flow temperature setpoint", "Temp"      , "t_thermostat_setpoint")
+        createDevice("Heatpump flow temperature"        , "Temp"      , "t_water_out")
+        createDevice("Heatpump return temperature"      , "Temp"      , "t_water_in")
+        #createDevice("COP"                              , "Percentage", "TBD")
+        createDevice("Electrical power"                 , "Power"     , "cm_mass_power_in")
+        createDevice("Heat power"                       , "Power"     , "cm_mass_power_out")
+        #createDevice("Power from air"                   , "Power"     , "TBD")
+        createDevice("Compressor usage"                 , "Percentage", "rpm")
 
         # Handle OAuth2 authentication with WeHeat backend
         self.login()
