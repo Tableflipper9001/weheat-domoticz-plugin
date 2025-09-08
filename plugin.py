@@ -139,7 +139,7 @@ class WeHeatPlugin:
         self.login()
 
         # Fetch heatpump UUID
-        asyncio.get_event_loop().run_until_complete(self.fetchUuid())
+        asyncio.run(self.fetchUuid())
 
         # Schedule a heartbeat to get sensor values
 
@@ -173,7 +173,7 @@ class WeHeatPlugin:
 
     def onHeartbeat(self):
         Domoticz.Log('Doing work on hearbeat...')
-        asyncio.get_event_loop().run_until_complete(self.pollHeatPumpLog())
+        asyncio.run(self.pollHeatPumpLog())
 
     def createDevice(self, Name, Type, ExternalId)
          if (not Name in Devices):
