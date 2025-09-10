@@ -9,6 +9,7 @@
         A plugin that reads out information about WeHeat heat pumps.<br/>
         Uses the official python client application to access the WeHeat backend TODO link.<br/>
         TODO: determine the throttle limit on the amount of requests
+        TODO: add conditional logic for different connection styles (hybrid, all electric, OT boiler, on/off boiler, with vale)
         <h3>Features</h3>
         <ul style="list-style-type:square">
             <li>OpenTherm, hybrid system only</li>
@@ -50,18 +51,20 @@
 </plugin>
 """
 
-import DomoticzEx as Domoticz
+import Domoticz
 import asyncio
 from datetime import datetime, timedelta
 from keycloak import KeycloakOpenID
-from weheat import ApiClient, Configuration, HeatPumpApi, HeatPumpLogApi, EnergyLogApi, UserApi
+from weheat import ApiClient, Configuration, HeatPumpApi, HeatPumpLogApi
+#from weheat import UnauthorizedException, TooManyRequestsException, ServiceException, ApiException
 
 # global constants
 sAuthUrl = 'https://auth.weheat.nl/auth/'
 sApiUrl = 'https://api.weheat.nl'
-sRealmName = 'WeHeat'
-sCliendId = 'WeheatCommunityAPI'
+sRealmName = 'Weheat'
+sClientId = 'WeheatCommunityAPI'
 sClientSecret = ''
+sThrottleFactor = 4 # * 30 seconds
 
 class WeHeatPlugin:
     enabled = False
@@ -72,7 +75,9 @@ class WeHeatPlugin:
         self._RefreshToken = ''
         self._HeatPumpUuid = ''
         self._KeyCloakOpenId: KeycloakOpenID | None = None
-        return
+        self._loggedIn = False
+        self._readyForWork = False
+        self._counter = 1
 
     def login(self):
         Domoticz.Log('Logging into WeHeat backend...')
@@ -80,10 +85,12 @@ class WeHeatPlugin:
                                               client_id=sClientId,
                                               realm_name=sRealmName,
                                               client_secret_key=sClientSecret)
-        token_response = self._KeyCloakOpenId.token(Parameter['Username'], Parameter['Password'])
+        # try except keycloak.exceptions.KeycloackAuthenticationError + Realm name error
+        token_response = self._KeyCloakOpenId.token(Parameters['Username'], Parameters['Password'])
         self._AccessToken = token_response['access_token']
         self._Expiration = datetime.now() + timedelta(seconds = token_response['expires_in'])
         self._RefreshToken = token_response['refresh_token']
+        self._loggedIn = True
 
     def refreshToken(self):
         if datetime.now() > self._Expiration - timedelta(seconds = 60):
@@ -96,6 +103,7 @@ class WeHeatPlugin:
     async def fetchUuid(self):
         config = Configuration(host=sApiUrl, access_token=self._AccessToken)
         async with ApiClient(configuration=config) as client:
+            # TODO try except the HTTP request
             response = await HeatPumpApi(client).api_v1_heat_pumps_get_with_http_info()
             if response.status_code == 200:
                 if len(response.data) > 1:
@@ -108,32 +116,36 @@ class WeHeatPlugin:
                     # Stop / restart the plugin
 
     async def pollHeatPumpLog(self):
-        self.refreshToken()
-        Domoticz.Log('Getting a data sample from heatpump')
+        Domoticz.Log('Sampling heatpump...')
         config = Configuration(host=sApiUrl, access_token=self._AccessToken)
         async with ApiClient(configuration=config) as client:
+#            try:
             response = await HeatPumpLogApi(client).api_v1_heat_pumps_heat_pump_id_logs_latest_get_with_http_info(
             heat_pump_id=self._HeatPumpUuid)
+#            except UnauthorizedException as e:
+#                 Domoticz.Error('Login to weheat was invalidated, trying to login again...')
+#                 self.login()
+#            except ServiceException as e:
+#                 Domoticz.Error(f'Service error: {e}')
+#            except TooManyRequestsException as e:
+#                 Domoticz.Error('Too many requests, change the plugin heartbeat!')
 
             if response.status_code == 200:
-                for key,value in vars(response.data).items():
-                    Domoticz.Log(f'{key} = {value}')
+                for unit in Devices:
+                    Device = Devices[unit]
+                    if Device.Options['ExternalId'] in vars(response.data):
+                        sValue = vars(response.data)[Device.Options['ExternalId']]
+                        sValue = f"{sValue:.1f}"
+                        Domoticz.Log(f"{Device.Name} = {sValue}")
+                        # TODO: add logic for other devices types when added
+                        Device.Update(nValue=0, sValue=sValue)
+                    else:
+                        Domoticz.Error(f"Sensor '{Device.Name}' not found in HTTP response")
+            else:
+                Domoticz.Error('Weheat: did not get HTTP response code 200 back')
 
     def onStart(self):
         Domoticz.Log('WeHeat plugin is starting')
-
-        # Create all sensors if they do not exist
-        createDevice("Room temperature"                 , "Temp"      , "t_room")
-        createDevice("Room temperature setpoint"        , "Temp"      , "t_room_target")
-        createDevice("Heating flow temperature"         , "Temp"      , "t_water_house_in")
-        createDevice("Heating flow temperature setpoint", "Temp"      , "t_thermostat_setpoint")
-        createDevice("Heatpump flow temperature"        , "Temp"      , "t_water_out")
-        createDevice("Heatpump return temperature"      , "Temp"      , "t_water_in")
-        #createDevice("COP"                              , "Percentage", "TBD")
-        createDevice("Electrical power"                 , "Power"     , "cm_mass_power_in")
-        createDevice("Heat power"                       , "Power"     , "cm_mass_power_out")
-        #createDevice("Power from air"                   , "Power"     , "TBD")
-        createDevice("Compressor usage"                 , "Percentage", "rpm")
 
         # Handle OAuth2 authentication with WeHeat backend
         self.login()
@@ -141,7 +153,24 @@ class WeHeatPlugin:
         # Fetch heatpump UUID
         asyncio.run(self.fetchUuid())
 
-        # Schedule a heartbeat to get sensor values
+        # TODO: fetch heatpump configuration
+
+        # Create sensors based on heatpump type if they do not exist
+        self.createDevice(1, "Room temperature"                 , "Temperature", "t_room")
+        self.createDevice(2, "Room temperature setpoint"        , "Temperature", "t_room_target")
+        self.createDevice(3, "Heating flow temperature"         , "Temperature", "t_water_house_in")
+        self.createDevice(4, "Heating flow temperature setpoint", "Temperature", "t_thermostat_setpoint")
+        self.createDevice(5, "Heatpump flow temperature"        , "Temperature", "t_water_out")
+        self.createDevice(6, "Heatpump return temperature"      , "Temperature", "t_water_in")
+        self.createDevice(7, "Electrical power"                 , "Usage"      , "cm_mass_power_in")
+        self.createDevice(8, "Heat power"                       , "Usage"      , "cm_mass_power_out")
+        self.createDevice(9, "Compressor usage"                 , "Percentage" , "rpm")
+        #self.createDevice(10, "COP"                              , "Percentage", "TBD")
+        #self.createDevice(11, "Power from air"                   , "Power"     , "TBD")
+
+        # Set hearbeat to the maximum, TODO if we violate the amount of samples?
+        Domoticz.Heartbeat(30)
+        self._readyForWork = True
 
         # Dump config
         if Parameters["Mode6"] != "0":
@@ -150,7 +179,10 @@ class WeHeatPlugin:
 
     def onStop(self):
         Domoticz.Log("WeHeat plugin is stopping")
-        self._KeyCloakOpenId.logout(self._RefreshToken)
+        if self._loggedIn:
+            self._KeyCloakOpenId.logout(self._RefreshToken)
+            self._loggedIn = False
+            self._readyForWork = False
         # Don't leave anything regarding authentication hanging in memory
         self._AccessToken=''
         self._RefreshToken=''
@@ -172,14 +204,19 @@ class WeHeatPlugin:
         Domoticz.Log("onDisconnect called")
 
     def onHeartbeat(self):
-        Domoticz.Log('Doing work on hearbeat...')
-        asyncio.run(self.pollHeatPumpLog())
+        if not self._readyForWork:
+            return
+        self.refreshToken()
+        if self._counter % sThrottleFactor == 0:
+            self._counter = 1
+            asyncio.run(self.pollHeatPumpLog())
+        else:
+            self._counter += 1
 
-    def createDevice(self, Name, Type, ExternalId)
-         if (not Name in Devices):
-             id = len(Devices) + 1
-             Domoticz.Log("Creating new sensor '" + Name + "' (" + id + ") of type '" + Type + "' with external id '" + ExternalId + "'")
-             Domoticz.Device(Name=Name, Unit=id, TypeName=Type, DeviceId=ExternalId).Create()
+    def createDevice(self, Id, Name, Type, ExternalId):
+        if not Id in Devices:
+             Domoticz.Log("Creating new sensor '" + Name + "' (" + str(Id) + ") of type '" + Type + "' with external id '" + ExternalId + "'")
+             Domoticz.Device(Name=Name, Unit=Id, TypeName=Type, Options={"ExternalId": ExternalId}).Create()
 
 global _plugin
 _plugin = WeHeatPlugin()
