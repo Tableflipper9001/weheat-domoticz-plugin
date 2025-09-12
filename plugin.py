@@ -7,13 +7,12 @@
     <description>
         <h2>WeHeat</h2><br/>
         A plugin that reads out information about WeHeat heat pumps.<br/>
-        Uses the official python client application to access the WeHeat backend TODO link.<br/>
-        TODO: determine the throttle limit on the amount of requests
-        TODO: add conditional logic for different connection styles (hybrid, all electric, OT boiler, on/off boiler, with vale)
+        Uses the official python client application to access the
+        <a href="https://github.com/wefabricate/wh-python"> WeHeat backend</a><br/>
         <h3>Features</h3>
         <ul style="list-style-type:square">
-            <li>OpenTherm, hybrid system only</li>
-            <li>Read out some sensors, see devices</li>
+            <li>Basic determination on setup (hybrid vs. all electric)</li>
+            <li>Read out some sensors, see devices for the list</li>
         </ul>
         <h3>Devices</h3>
         <ul style="list-style-type:square">
@@ -24,13 +23,18 @@
             <li>Temperature - Heatpump flow temperature</li>
             <li>Temperature - Heatpump return temperature</li>
             <li>Percentage  - COP</li>
-            <li>Power - Electrical power</li>
-            <li>Power - Heat power</li>
-            <li>Power - Power from air</li>
+            <li>Usage - Electrical power</li>
+            <li>Usage - Heat power</li>
+            <li>Usage - Power from air</li>
             <li>Percentage - Compressor usage</li>
+            <li>Text - Heatpump state</li>
+            <li>Text - Cooling state</li>
+            <li>Text - Heatpump error</li>
+            <li>Hybrid:</li>
+            <li>On/off switch - Gas boiler state</li>
+            <li>All-electric:</li>
+            <li>On/off switch - Electric heater state</li>
         </ul>
-        <h3>Configuration</h3>
-        TODO config options
     </description>
     <params>
         <param field="Username" label="Username" required="true"/>
@@ -83,7 +87,7 @@ class WeHeatPlugin:
         self._boilerType: ReadableBoilerType | None = None
         self._counter = 1
 
-    def login(self) -> bool:
+    def login(self):
         Domoticz.Log('Logging into WeHeat backend...')
         self._KeyCloakOpenId = KeycloakOpenID(server_url=sAuthUrl,
                                               client_id=sClientId,
@@ -95,16 +99,15 @@ class WeHeatPlugin:
         except KeycloakAuthenticationError as e:
             Domoticz.Error(f"Failed to authenticate: {e}")
             Domoticz.Error('This plugin will not execute any logic and now ghost CPU cycles')
-            return False
+            return
         except KeycloakPostError as e:
             Domoticz.Error(f"Failed to send login request: {e}")
             Domoticz.Error('This plugin will not execute any logic and now ghost CPU cycles')
-            return False
+            return
         self._AccessToken = token_response['access_token']
         self._Expiration = datetime.now() + timedelta(seconds = token_response['expires_in'])
         self._RefreshToken = token_response['refresh_token']
         self._loggedIn = True
-        return True
 
     def refreshToken(self):
         if datetime.now() > self._Expiration - timedelta(seconds = 60):
@@ -117,8 +120,15 @@ class WeHeatPlugin:
     async def fetchSetup(self):
         config = Configuration(host=sApiUrl, access_token=self._AccessToken)
         async with ApiClient(configuration=config) as client:
-            # TODO try except the HTTP request
-            response = await HeatPumpApi(client).api_v1_heat_pumps_get_with_http_info()
+            try:
+                response = await HeatPumpApi(client).api_v1_heat_pumps_get_with_http_info()
+            except ApiException as e:
+                if(e.status >= 500 or e.status <= 599): #Service exception
+                    Domoticz.Error('Service exception, is the WeHeat backend alive?')
+                else:
+                    Domoticz.Error(f"Unhandled HTTP exception: {e}, please report to plugin maintainer")
+                return
+
             if response.status_code == 200:
                 if len(response.data) > 1:
                     Domoticz.Log('WARNING: response data contains more than 1 heatpump, picking the first one!')
@@ -137,16 +147,20 @@ class WeHeatPlugin:
         Domoticz.Log('Sampling heatpump...')
         config = Configuration(host=sApiUrl, access_token=self._AccessToken)
         async with ApiClient(configuration=config) as client:
-#            try:
-            response = await HeatPumpLogApi(client).api_v1_heat_pumps_heat_pump_id_logs_latest_get_with_http_info(
-            heat_pump_id=self._HeatPumpUuid)
-#            except UnauthorizedException as e:
-#                 Domoticz.Error('Login to weheat was invalidated, trying to login again...')
-#                 self.login()
-#            except ServiceException as e:
-#                 Domoticz.Error(f'Service error: {e}')
-#            except TooManyRequestsException as e:
-#                 Domoticz.Error('Too many requests, change the plugin heartbeat!')
+            try:
+                response = await HeatPumpLogApi(client).api_v1_heat_pumps_heat_pump_id_logs_latest_get_with_http_info(
+                heat_pump_id=self._HeatPumpUuid)
+            except ApiException as e:
+                if(e.status == 401): # Unauthorized
+                    Domoticz.Error('WeHeat login has expired, trying to login again...')
+                    self.login()
+                elif(e.status == 429): # Too Many requests
+                    Domoticz.Error('Too many requests, ask plugin maintainer to re-adjust sThrottleFactor')
+                elif(e.status >= 500 or e.status <= 599): #Service exception
+                    Domoticz.Error('Service exception, is the WeHeat backend alive?')
+                else:
+                    Domoticz.Error(f"Unhandled HTTP exception: {e}, please report to plugin maintainer")
+                return
 
             if response.status_code == 200:
                 for unit in Devices:
@@ -181,19 +195,22 @@ class WeHeatPlugin:
                         Domoticz.Log(f"{Device.Name} = {sValue}")
                         Device.Update(nValue=0, sValue=sValue)
                     else:
-                        Domoticz.Error("Hier kan ik dus niks mee")
+                        Domoticz.Error(f"Cannot handle sample for {Device.Name}")
             else:
-                Domoticz.Error('Weheat: did not get HTTP response code 200 back')
+                Domoticz.Error("Did not expect to receive a success other than 200 from WeHeat backend, got {} instead", response.status_code)
 
     def onStart(self):
         Domoticz.Log('WeHeat plugin is starting')
 
         # Handle OAuth2 authentication with WeHeat backend
-        if not self.login():
+        self.login()
+        if not self._loggedIn:
             return
 
         # Fetch heatpump configuration
         asyncio.run(self.fetchSetup())
+        if self._boilerType == None:
+            return
 
         # Create sensors based on heatpump type if they do not exist
         self.createDevice(1 , "Room temperature"                 , "Temperature", "t_room")
