@@ -3,7 +3,7 @@
 # Author: Jordy Knubben
 #
 """
-<plugin key="WeHeat" name="WeHeat" author="Jordy Knubben" version="0.0.1" wikilink="https://wiki.domoticz.com/Plugins" externallink="https://www.weheat.nl/">
+<plugin key="WeHeat" name="WeHeat" author="Jordy Knubben" version="0.0.2" wikilink="https://wiki.domoticz.com/Plugins" externallink="https://www.weheat.nl/">
     <description>
         <h2>WeHeat</h2><br/>
         A plugin that reads out information about WeHeat heat pumps.<br/>
@@ -169,7 +169,7 @@ class WeHeatPlugin:
                         # Devices that require calculation
                         nValue = 0
                         if "COP" in Device.Name:
-                            nValue = vars(response.data)['cm_mass_power_out'] / vars(response.data)['cm_mass_power_in']
+                            nValue = vars(response.data)['cm_mass_power_out'] / vars(response.data)['cm_mass_power_in'] * 100
                         if "Power from air" in Device.Name:
                             nValue = vars(response.data)['cm_mass_power_out'] - vars(response.data)['cm_mass_power_in']
                             nValue = max(nValue, 0)
