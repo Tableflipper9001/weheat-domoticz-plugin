@@ -173,6 +173,11 @@ class WeHeatPlugin:
                         if "Power from air" in Device.Name:
                             nValue = vars(response.data)['cm_mass_power_out'] - vars(response.data)['cm_mass_power_in']
                             nValue = max(nValue, 0)
+                        if "Compressor usage" in Device.Name:
+                            if vars(response.data)['cm_mass_power_out'] == 0:
+                                nValue = 0
+                            else:
+                                nValue = vars(response.data)['rpm'] / vars(response.data)['cm_mass_power_out'] * 100
                         sValue = f"{nValue:.1f}"
                         Domoticz.Log(f"{Device.Name} = {sValue}")
                         Device.Update(nValue=0, sValue=sValue)
@@ -221,7 +226,7 @@ class WeHeatPlugin:
         self.createDevice(6 , "Heatpump return temperature"      , "Temperature", "t_water_in")
         self.createDevice(7 , "Electrical power"                 , "Usage"      , "cm_mass_power_in")
         self.createDevice(8 , "Heat power"                       , "Usage"      , "cm_mass_power_out")
-        self.createDevice(9 , "Compressor usage"                 , "Percentage" , "rpm")
+        self.createDevice(9 , "Compressor usage"                 , "Percentage" , "Math")
         self.createDevice(10, "COP"                              , "Percentage" , "Math")
         self.createDevice(11, "Power from air"                   , "Usage"      , "Math")
         self.createDevice(12, "State"                            , "Text"       , "state")
