@@ -38,7 +38,6 @@ See the plugin description in the Domoticz hardware tab
   Restart Domoticz as a work around.
 * Only 1 heatpump is supported per account, there is no reason to assume more right now
 * No hot water sensors yet
-* Compressor usage is not a valid percentage as shown in the app
 
 ## Release history
 
