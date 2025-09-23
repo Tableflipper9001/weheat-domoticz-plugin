@@ -42,9 +42,18 @@ See the plugin description in the Domoticz hardware tab
 
 ## Release history
 
-### v0.0.x
+### v0.0.2
 * Fix COP being a factor instead of a percentage
 * Tryfix 1: compressor usage as rpm / power_out -> also not ok
+* Calculated compressor max RPM from percentage in app and rpm sample
+* Changed Usage sensor types to kWh sensor (power + calculated energy) so we can track energy
+* If you already initialized with v0.0.1 sensors:
+    * Stop plugin
+    * Delete old sensor
+    * Update plugin
+    * Restart domoticz to reload the plugin change
+    * Start plugin
+    * Pray that it puts the new sensors on the same idx
 
 ### v0.0.1
 Initial plugin version, supporting some basic functionality like:
