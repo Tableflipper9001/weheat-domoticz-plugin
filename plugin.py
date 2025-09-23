@@ -72,6 +72,7 @@ sRealmName = 'Weheat'
 sClientId = 'WeheatCommunityAPI'
 sClientSecret = ''
 sThrottleFactor = 4 # * 30 seconds
+sMaxCompressorRpm = 5500 # Calculated back from RPM readout and WeHeat app %
 
 class WeHeatPlugin:
     enabled = False
@@ -123,7 +124,7 @@ class WeHeatPlugin:
             try:
                 response = await HeatPumpApi(client).api_v1_heat_pumps_get_with_http_info()
             except ApiException as e:
-                if(e.status >= 500 or e.status <= 599): #Service exception
+                if(e.status >= 500 or e.status <= 599): # Service exception
                     Domoticz.Error('Service exception, is the WeHeat backend alive?')
                 else:
                     Domoticz.Error(f"Unhandled HTTP exception: {e}, please report to plugin maintainer")
@@ -156,7 +157,7 @@ class WeHeatPlugin:
                     self.login()
                 elif(e.status == 429): # Too Many requests
                     Domoticz.Error('Too many requests, ask plugin maintainer to re-adjust sThrottleFactor')
-                elif(e.status >= 500 or e.status <= 599): #Service exception
+                elif(e.status >= 500 or e.status <= 599): # Service exception
                     Domoticz.Error('Service exception, is the WeHeat backend alive?')
                 else:
                     Domoticz.Error(f"Unhandled HTTP exception: {e}, please report to plugin maintainer")
@@ -174,10 +175,7 @@ class WeHeatPlugin:
                             nValue = vars(response.data)['cm_mass_power_out'] - vars(response.data)['cm_mass_power_in']
                             nValue = max(nValue, 0)
                         if "Compressor usage" in Device.Name:
-                            if vars(response.data)['cm_mass_power_out'] == 0:
-                                nValue = 0
-                            else:
-                                nValue = vars(response.data)['rpm'] / vars(response.data)['cm_mass_power_out'] * 100
+                            nValue = vars(response.data)['rpm'] / sMaxCompressorRpm * 100
                         sValue = f"{nValue:.1f}"
                         Domoticz.Log(f"{Device.Name} = {sValue}")
                         Device.Update(nValue=0, sValue=sValue)
