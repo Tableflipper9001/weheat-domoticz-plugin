@@ -23,9 +23,9 @@
             <li>Temperature - Heatpump flow temperature</li>
             <li>Temperature - Heatpump return temperature</li>
             <li>Percentage  - COP</li>
-            <li>Usage - Electrical power</li>
-            <li>Usage - Heat power</li>
-            <li>Usage - Power from air</li>
+            <li>kWh - Electrical power</li>
+            <li>kWh - Heat power</li>
+            <li>kWh - Power from air</li>
             <li>Percentage - Compressor usage</li>
             <li>Text - Heatpump state</li>
             <li>Text - Cooling state</li>
@@ -177,6 +177,8 @@ class WeHeatPlugin:
                         if "Compressor usage" in Device.Name:
                             nValue = vars(response.data)['rpm'] / sMaxCompressorRpm * 100
                         sValue = f"{nValue:.1f}"
+                        if 'EnergyMeterMode' in Device.Options: # No energy sensor available, just power so calculate
+                            sValue += ';0'
                         Domoticz.Log(f"{Device.Name} = {sValue}")
                         Device.Update(nValue=0, sValue=sValue)
                     elif Device.Type == 244: # switch
@@ -195,6 +197,8 @@ class WeHeatPlugin:
                     elif Device.Options['ExternalId'] in vars(response.data):
                         sValue = vars(response.data)[Device.Options['ExternalId']]
                         sValue = f"{sValue:.1f}"
+                        if 'EnergyMeterMode' in Device.Options: # No energy sensor available, just power so calculate
+                            sValue += ';0'
                         Domoticz.Log(f"{Device.Name} = {sValue}")
                         Device.Update(nValue=0, sValue=sValue)
                     else:
@@ -222,11 +226,11 @@ class WeHeatPlugin:
         self.createDevice(4 , "Heating flow temperature setpoint", "Temperature", "t_thermostat_setpoint")
         self.createDevice(5 , "Heatpump flow temperature"        , "Temperature", "t_water_out")
         self.createDevice(6 , "Heatpump return temperature"      , "Temperature", "t_water_in")
-        self.createDevice(7 , "Electrical power"                 , "Usage"      , "cm_mass_power_in")
-        self.createDevice(8 , "Heat power"                       , "Usage"      , "cm_mass_power_out")
+        self.createDevice(7 , "Electrical power"                 , "kWh"        , "cm_mass_power_in")
+        self.createDevice(8 , "Heat power"                       , "kWh"        , "cm_mass_power_out")
         self.createDevice(9 , "Compressor usage"                 , "Percentage" , "Math")
         self.createDevice(10, "COP"                              , "Percentage" , "Math")
-        self.createDevice(11, "Power from air"                   , "Usage"      , "Math")
+        self.createDevice(11, "Power from air"                   , "kWh"        , "Math")
         self.createDevice(12, "State"                            , "Text"       , "state")
         self.createDevice(13, "Cooling state"                    , "Text"       , "cooling_status")
         self.createDevice(14, "Error"                            , "Text"       , "error")
@@ -285,9 +289,12 @@ class WeHeatPlugin:
         if not Id in Devices:
              Domoticz.Log("Creating new sensor '" + Name + "' (" + str(Id) + ") of type '" + Type + "' with external id '" + ExternalId + "'")
              if Type == "Switch":
-                 Domoticz.Device(Name=Name, Unit=Id, Type=244, Subtype=73, Switchtype=0, Options={"ExternalId": ExternalId}).Create()
+                 Domoticz.Device(Name=Name, Unit=Id, Type=244, Subtype=73, Switchtype=0, Options={'ExternalId': ExternalId}).Create()
              else:
-                 Domoticz.Device(Name=Name, Unit=Id, TypeName=Type, Options={"ExternalId": ExternalId}).Create()
+                 if Type == "kWh":
+                     Domoticz.Device(Name=Name, Unit=Id, TypeName=Type, Options={'ExternalId': ExternalId, 'EnergyMeterMode': '1'}).Create()
+                 else:
+                     Domoticz.Device(Name=Name, Unit=Id, TypeName=Type, Options={'ExternalId': ExternalId}).Create()
 
 global _plugin
 _plugin = WeHeatPlugin()
