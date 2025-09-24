@@ -3,7 +3,7 @@
 # Author: Jordy Knubben
 #
 """
-<plugin key="WeHeat" name="WeHeat" author="Jordy Knubben" version="0.0.2" wikilink="https://wiki.domoticz.com/Plugins" externallink="https://www.weheat.nl/">
+<plugin key="WeHeat" name="WeHeat" author="Jordy Knubben" version="0.0.3" wikilink="https://wiki.domoticz.com/Plugins" externallink="https://www.weheat.nl/">
     <description>
         <h2>WeHeat</h2><br/>
         A plugin that reads out information about WeHeat heat pumps.<br/>
@@ -61,7 +61,7 @@ from enum import IntEnum
 from datetime import datetime, timedelta
 from keycloak import KeycloakOpenID
 from keycloak import KeycloakAuthenticationError, KeycloakPostError
-from weheat import BoilerType
+from weheat import BoilerType, HeatPumpModel
 from weheat import ApiClient, Configuration, HeatPumpApi, HeatPumpLogApi
 from weheat import ApiException
 
@@ -72,7 +72,6 @@ sRealmName = 'Weheat'
 sClientId = 'WeheatCommunityAPI'
 sClientSecret = ''
 sThrottleFactor = 4 # * 30 seconds
-sMaxCompressorRpm = 5500 # Calculated back from RPM readout and WeHeat app %
 
 class WeHeatPlugin:
     enabled = False
@@ -82,6 +81,7 @@ class WeHeatPlugin:
         self._Expiration = datetime.now()
         self._RefreshToken = ''
         self._HeatPumpUuid = ''
+        self._Pnom = 0
         self._KeyCloakOpenId: KeycloakOpenID | None = None
         self._loggedIn = False
         self._readyForWork = False
@@ -141,6 +141,12 @@ class WeHeatPlugin:
                          Domoticz.Log('Detected a hybrid configuration')
                     else:
                          Domoticz.Log('Detected an all-electric configuration')
+                    if response.data[0].model == HeatPumpModel.NUMBER_1: # Blackbird P80
+                        self._Pnom = 8000
+                    elif response.data[0].model == HeatPumpModel.NUMBER_5: # Flint P40
+                        self._Pnom = 4000
+                    else: # All other models are 6kW nominal rated
+                        self._Pnom = 6000
             else:
                 Domoticz.Error(f"Unexpected WeHeat API HTTP response code: {response.status_code}")
 
@@ -170,12 +176,13 @@ class WeHeatPlugin:
                         # Devices that require calculation
                         nValue = 0
                         if "COP" in Device.Name:
-                            nValue = vars(response.data)['cm_mass_power_out'] / vars(response.data)['cm_mass_power_in'] * 100
+                            nValue = (vars(response.data)['cm_mass_power_out'] / vars(response.data)['cm_mass_power_in']) * 100
                         if "Power from air" in Device.Name:
                             nValue = vars(response.data)['cm_mass_power_out'] - vars(response.data)['cm_mass_power_in']
                             nValue = max(nValue, 0)
                         if "Compressor usage" in Device.Name:
-                            nValue = vars(response.data)['rpm'] / sMaxCompressorRpm * 100
+                            nValue = (vars(response.data)['rpm'] / self._Pnom) * 100
+                            Domoticz.Log("raw: " + str(vars(response.data)['rpm']) + ", calc: " + str(nValue))
                         sValue = f"{nValue:.1f}"
                         if 'EnergyMeterMode' in Device.Options: # No energy sensor available, just power so calculate
                             sValue += ';0'

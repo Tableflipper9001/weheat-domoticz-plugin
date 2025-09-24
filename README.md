@@ -38,8 +38,13 @@ See the plugin description in the Domoticz hardware tab
   Restart Domoticz as a work around.
 * Only 1 heatpump is supported per account, there is no reason to assume more right now
 * No hot water sensors yet
+* When Device Options change this can either be resolved by deleting the sensor (and history) or by modifying the DB offline.
+Check if we can do this from code instead on load time.
 
 ## Release history
+
+### v0.0.3
+* Fix the compressor usage properly based on the used heatpump (different Pnominal)
 
 ### v0.0.2
 * Fix COP being a factor instead of a percentage
