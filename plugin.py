@@ -89,7 +89,7 @@ class WeHeatPlugin:
         self._counter = 1
 
     def login(self):
-        Domoticz.Log('Logging into WeHeat backend...')
+        Domoticz.Status('Logging into WeHeat backend...')
         self._KeyCloakOpenId = KeycloakOpenID(server_url=sAuthUrl,
                                               client_id=sClientId,
                                               realm_name=sRealmName,
@@ -125,22 +125,22 @@ class WeHeatPlugin:
                 response = await HeatPumpApi(client).api_v1_heat_pumps_get_with_http_info()
             except ApiException as e:
                 if(e.status >= 500 or e.status <= 599): # Service exception
-                    Domoticz.Error('Service exception, is the WeHeat backend alive?')
+                    Domoticz.Error(f"Service exception({e.status}), is the WeHeat backend alive?")
                 else:
                     Domoticz.Error(f"Unhandled HTTP exception: {e}, please report to plugin maintainer")
                 return
 
             if response.status_code == 200:
                 if len(response.data) > 1:
-                    Domoticz.Log('WARNING: response data contains more than 1 heatpump, picking the first one!')
+                    Domoticz.Status('WARNING: response data contains more than 1 heatpump, picking the first one!')
                 if len(response.data) > 0:
                     self._HeatPumpUuid = response.data[0].id
-                    Domoticz.Log("Using heatpump UUID '" + self._HeatPumpUuid + "'")
+                    Domoticz.Status("Using heatpump UUID '" + self._HeatPumpUuid + "'")
                     self._boilerType = MAP_BOILER_TYPE[response.data[0].boiler_type]
                     if self._boilerType == ReadableBoilerType.ON_OFF_BOILER or self._boilerType == ReadableBoilerType.OT_BOILER:
-                         Domoticz.Log('Detected a hybrid configuration')
+                         Domoticz.Status'Detected a hybrid configuration')
                     else:
-                         Domoticz.Log('Detected an all-electric configuration')
+                         Domoticz.Status('Detected an all-electric configuration')
                     if response.data[0].model == HeatPumpModel.NUMBER_1: # Blackbird P80
                         self._Pnom = 8000
                     elif response.data[0].model == HeatPumpModel.NUMBER_5: # Flint P40
@@ -164,7 +164,7 @@ class WeHeatPlugin:
                 elif(e.status == 429): # Too Many requests
                     Domoticz.Error('Too many requests, ask plugin maintainer to re-adjust sThrottleFactor')
                 elif(e.status >= 500 or e.status <= 599): # Service exception
-                    Domoticz.Error('Service exception, is the WeHeat backend alive?')
+                    Domoticz.Error(f"Service exception({e.status}, is the WeHeat backend alive?")
                 else:
                     Domoticz.Error(f"Unhandled HTTP exception: {e}, please report to plugin maintainer")
                 return
@@ -185,11 +185,11 @@ class WeHeatPlugin:
                         sValue = f"{nValue:.1f}"
                         if 'EnergyMeterMode' in Device.Options: # No energy sensor available, just power so calculate
                             sValue += ';0'
-                        Domoticz.Log(f"{Device.Name} = {sValue}")
+                        Domoticz.Debug(f"{Device.Name} = {sValue}")
                         Device.Update(nValue=0, sValue=sValue)
                     elif Device.Type == 244: # switch
                         sValue = vars(response.data)[Device.Options['ExternalId']]
-                        Domoticz.Log(f"{Device.Name} = {sValue}")
+                        Domoticz.Debug(f"{Device.Name} = {sValue}")
                         Device.Update(nValue=sValue, sValue="")
                     elif Device.Type == 243 and Device.SubType == 19: # text
                         nValue = vars(response.data)[Device.Options['ExternalId']]
@@ -198,14 +198,14 @@ class WeHeatPlugin:
                             sValue = ConvertHeatPumpStatus(nValue)
                         else:
                             sValue = str(nValue)
-                        Domoticz.Log(f"{Device.Name} = {sValue}")
+                        Domoticz.Debug(f"{Device.Name} = {sValue}")
                         Device.Update(nValue=0, sValue=sValue)
                     elif Device.Options['ExternalId'] in vars(response.data):
                         sValue = vars(response.data)[Device.Options['ExternalId']]
                         sValue = f"{sValue:.1f}"
                         if 'EnergyMeterMode' in Device.Options: # No energy sensor available, just power so calculate
                             sValue += ';0'
-                        Domoticz.Log(f"{Device.Name} = {sValue}")
+                        Domoticz.Debug(f"{Device.Name} = {sValue}")
                         Device.Update(nValue=0, sValue=sValue)
                     else:
                         Domoticz.Error(f"Cannot handle sample for {Device.Name}")
@@ -213,7 +213,7 @@ class WeHeatPlugin:
                 Domoticz.Error("Did not expect to receive a success other than 200 from WeHeat backend, got {} instead", response.status_code)
 
     def onStart(self):
-        Domoticz.Log('WeHeat plugin is starting')
+        Domoticz.Status('WeHeat plugin is starting')
 
         # Handle OAuth2 authentication with WeHeat backend
         self.login()
@@ -256,7 +256,7 @@ class WeHeatPlugin:
             DumpConfigToLog()
 
     def onStop(self):
-        Domoticz.Log("WeHeat plugin is stopping")
+        Domoticz.Status("WeHeat plugin is stopping")
         if self._loggedIn:
             self._KeyCloakOpenId.logout(self._RefreshToken)
             self._loggedIn = False
@@ -267,19 +267,19 @@ class WeHeatPlugin:
         self._KeyCloakOpenId = None
 
     def onConnect(self, Connection, Status, Description):
-        Domoticz.Log("onConnect called")
+        Domoticz.Status("onConnect called")
 
     def onMessage(self, Connection, Data):
-        Domoticz.Log("onMessage called")
+        Domoticz.Status("onMessage called")
 
     def onCommand(self, DeviceID, Unit, Command, Level, Color):
-        Domoticz.Log("onCommand called for Device " + str(DeviceID) + " Unit " + str(Unit) + ": Parameter '" + str(Command) + "', Level: " + str(Level))
+        Domoticz.Status("onCommand called for Device " + str(DeviceID) + " Unit " + str(Unit) + ": Parameter '" + str(Command) + "', Level: " + str(Level))
 
     def onNotification(self, Name, Subject, Text, Status, Priority, Sound, ImageFile):
-        Domoticz.Log("Notification: " + Name + "," + Subject + "," + Text + "," + Status + "," + str(Priority) + "," + Sound + "," + ImageFile)
+        Domoticz.Status("Notification: " + Name + "," + Subject + "," + Text + "," + Status + "," + str(Priority) + "," + Sound + "," + ImageFile)
 
     def onDisconnect(self, Connection):
-        Domoticz.Log("onDisconnect called")
+        Domoticz.Status("onDisconnect called")
 
     def onHeartbeat(self):
         if not self._readyForWork:
@@ -293,7 +293,7 @@ class WeHeatPlugin:
 
     def createDevice(self, Id, Name, Type, ExternalId):
         if not Id in Devices:
-             Domoticz.Log("Creating new sensor '" + Name + "' (" + str(Id) + ") of type '" + Type + "' with external id '" + ExternalId + "'")
+             Domoticz.Status("Creating new sensor '" + Name + "' (" + str(Id) + ") of type '" + Type + "' with external id '" + ExternalId + "'")
              if Type == "Switch":
                  Domoticz.Device(Name=Name, Unit=Id, Type=244, Subtype=73, Switchtype=0, Options={'ExternalId': ExternalId}).Create()
              else:
