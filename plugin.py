@@ -182,7 +182,6 @@ class WeHeatPlugin:
                             nValue = max(nValue, 0)
                         if "Compressor usage" in Device.Name:
                             nValue = (vars(response.data)['rpm'] / self._Pnom) * 100
-                            Domoticz.Log("raw: " + str(vars(response.data)['rpm']) + ", calc: " + str(nValue))
                         sValue = f"{nValue:.1f}"
                         if 'EnergyMeterMode' in Device.Options: # No energy sensor available, just power so calculate
                             sValue += ';0'
