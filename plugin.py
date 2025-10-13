@@ -138,7 +138,7 @@ class WeHeatPlugin:
                     Domoticz.Status("Using heatpump UUID '" + self._HeatPumpUuid + "'")
                     self._boilerType = MAP_BOILER_TYPE[response.data[0].boiler_type]
                     if self._boilerType == ReadableBoilerType.ON_OFF_BOILER or self._boilerType == ReadableBoilerType.OT_BOILER:
-                         Domoticz.Status'Detected a hybrid configuration')
+                         Domoticz.Status('Detected a hybrid configuration')
                     else:
                          Domoticz.Status('Detected an all-electric configuration')
                     if response.data[0].model == HeatPumpModel.NUMBER_1: # Blackbird P80
