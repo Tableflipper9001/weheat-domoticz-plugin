@@ -175,7 +175,7 @@ class WeHeatPlugin:
                     if Device.Options['ExternalId'] == 'Math':
                         # Devices that require calculation
                         nValue = 0
-                        if "COP" in Device.Name:
+                        if "COP" in Device.Name and vars(response.data)['cm_mass_power_in'] != 0: # cm_mass_power_in can become 0 on connection problems with the heatpump
                             nValue = (vars(response.data)['cm_mass_power_out'] / vars(response.data)['cm_mass_power_in']) * 100
                         if "Power from air" in Device.Name:
                             nValue = vars(response.data)['cm_mass_power_out'] - vars(response.data)['cm_mass_power_in']
