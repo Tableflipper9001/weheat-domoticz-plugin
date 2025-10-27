@@ -40,11 +40,15 @@ See the plugin description in the Domoticz hardware tab
 * No hot water sensors yet
 * When Device Options change this can either be resolved by deleting the sensor (and history) or by modifying the DB offline.
 Check if we can do this from code instead on load time.
+* The 'generic functions' related to weheat should be removed from global and put in the class (something similar as private)
+* The outside air temperature can be added, this may be convenient for mapping flow, return and air temp to COP
 
 ## Release history
 
 ### v0.0.3
 * Fix the compressor usage properly based on the used heatpump (different Pnominal)
+* Fix a div by zero since WeHeat removed the idle power from the electrical power
+* Change the logging levels to prevent spamming the log
 
 ### v0.0.2
 * Fix COP being a factor instead of a percentage
