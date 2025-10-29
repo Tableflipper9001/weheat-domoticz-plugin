@@ -113,7 +113,12 @@ class WeHeatPlugin:
     def refreshToken(self):
         if datetime.now() > self._Expiration - timedelta(seconds = 60):
             Domoticz.Log('Refreshing token...')
-            token_response = self._KeyCloakOpenId.refresh_token(refresh_token=self._RefreshToken, grant_type='refresh_token')
+            try:
+                token_response = self._KeyCloakOpenId.refresh_token(refresh_token=self._RefreshToken, grant_type='refresh_token')
+            except KeycloakPostError as e:
+                Domoticz.Error(f"Failed to refresh token with: {e}")
+                Domoticz.Error('Trying again next cycle...')
+                return
             self._AccessToken = token_response['access_token']
             self._Expiration = datetime.now() + timedelta(seconds = token_response['expires_in'])
             self._RefreshToken = token_response['refresh_token']
