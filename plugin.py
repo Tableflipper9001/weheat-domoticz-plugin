@@ -57,13 +57,17 @@
 
 import Domoticz
 import asyncio
+import time
 from enum import IntEnum
 from datetime import datetime, timedelta
 from keycloak import KeycloakOpenID
 from keycloak import KeycloakAuthenticationError, KeycloakPostError
+from typing import List
+from typing import Optional
 from weheat import BoilerType, HeatPumpModel
 from weheat import ApiClient, Configuration, HeatPumpApi, HeatPumpLogApi
 from weheat import ApiException
+from zeroconf import Zeroconf, ServiceBrowser, ServiceStateChange, ServiceInfo
 
 # global constants
 sAuthUrl = 'https://auth.weheat.nl/auth/'
@@ -87,6 +91,7 @@ class WeHeatPlugin:
         self._readyForWork = False
         self._boilerType: ReadableBoilerType | None = None
         self._counter = 1
+        self._ZeroConfRecord: List[ServiceInfo] = []
 
     def login(self):
         Domoticz.Status('Logging into WeHeat backend...')
@@ -219,6 +224,7 @@ class WeHeatPlugin:
 
     def onStart(self):
         Domoticz.Status('WeHeat plugin is starting')
+        self.findDomoticz()
 
         # Handle OAuth2 authentication with WeHeat backend
         self.login()
@@ -296,6 +302,18 @@ class WeHeatPlugin:
         else:
             self._counter += 1
 
+#    def stopFromWithin():
+#        Domoticz.Error('WeHeat plugin is being stopped from the inside!')
+#        for record in self._ZerConfRecord:
+#            port = record['port']
+#            host = record['server']
+#            if 'https' in record['type']:
+#                protocol = 'HTTPS'
+#            else:
+#                protocol = 'HTTP'
+#            stopConnection = Domoticz.Connection(Name='Stop', Transport='TCP/IP', Protocol=protocol, Address=host, Port=port)
+#            stopConnection.Connect()
+
     def createDevice(self, Id, Name, Type, ExternalId):
         if not Id in Devices:
              Domoticz.Status("Creating new sensor '" + Name + "' (" + str(Id) + ") of type '" + Type + "' with external id '" + ExternalId + "'")
@@ -306,6 +324,18 @@ class WeHeatPlugin:
                      Domoticz.Device(Name=Name, Unit=Id, TypeName=Type, Options={'ExternalId': ExternalId, 'EnergyMeterMode': '1'}).Create()
                  else:
                      Domoticz.Device(Name=Name, Unit=Id, TypeName=Type, Options={'ExternalId': ExternalId}).Create()
+
+    def getDomoticzEntry(self, zeroconf: Zeroconf, service_type: str, name: str, state_change):
+        info = zeroconf.get_service_info(service_type, name, timeout=1)
+        if b'app' in info.properties and info.properties[b'app'] == b'Domoticz':
+            self._ZeroConfRecord.append(info)
+
+    def findDomoticz(self):
+        zc = Zeroconf()
+        browser = ServiceBrowser(zc, ['_http._tcp.local.', '_https._tcp.local.'], handlers=[self.getDomoticzEntry])
+        time.sleep(1)
+        zc.close()
+
 
 global _plugin
 _plugin = WeHeatPlugin()
