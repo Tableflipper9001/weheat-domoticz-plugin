@@ -420,3 +420,5 @@ def ConvertHeatPumpStatus(number: int) -> str:
            return "Selftest"
        case 180:
            return "Manual control"
+       case _:
+           return "Unknown (raw value: " + str(number) + ")"
