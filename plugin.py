@@ -76,6 +76,8 @@ sRealmName = 'Weheat'
 sClientId = 'WeheatCommunityAPI'
 sClientSecret = ''
 sThrottleFactor = 4 # * 30 seconds
+sMinCOP = 0
+sMaxCOP = 10 * 100
 
 class WeHeatPlugin:
     enabled = False
@@ -187,6 +189,8 @@ class WeHeatPlugin:
                         nValue = 0
                         if "COP" in Device.Name and vars(response.data)['cm_mass_power_in'] != 0: # cm_mass_power_in can become 0 on connection problems with the heatpump
                             nValue = (vars(response.data)['cm_mass_power_out'] / vars(response.data)['cm_mass_power_in']) * 100
+                            nValue = max(nValue, sMinCOP) # cutoff negative to MinCOP
+                            nValue = min(nValue, sMaxCOP) # cutoff positive beyond MaxCOP
                         if "Power from air" in Device.Name:
                             nValue = vars(response.data)['cm_mass_power_out'] - vars(response.data)['cm_mass_power_in']
                             nValue = max(nValue, 0)
