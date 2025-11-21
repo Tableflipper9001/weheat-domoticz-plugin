@@ -48,6 +48,7 @@ Check if we can do this from code instead on load time.
 ### v0.0.4
 * Create default case for status codes not in the API definition
 * Limit COP in range 0 to 10. COP becomes negative in defrost cycles and may get unreleastic peaks due to bad sample period.
+* Fix the state variable not being of HeatPumpStatusEnum type, instead State from HeatPump
 * Stop the plugin from self (unfinished)
 
 ### v0.0.3

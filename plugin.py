@@ -404,7 +404,8 @@ MAP_BOILER_TYPE = {
 }
 
 # Source of definition:
-# https://github.com/wefabricate/wh-python/blob/main/weheat/models/heat_pump_status_enum.py
+# https://github.com/wefabricate/wh-python/blob/main/weheat/abstractions/heat_pump.py
+# This is apparantly different from https://github.com/wefabricate/wh-python/blob/main/weheat/models/heat_pump_status_enum.py
 # Use this for text sensor, so convert to string
 def ConvertHeatPumpStatus(number: int) -> str:
     match number:
@@ -412,9 +413,7 @@ def ConvertHeatPumpStatus(number: int) -> str:
            return "Standby"
        case 70:
            return "Heating"
-       case 90:
-           return "Defrost"
-       case 130:
+       case c if 130 <= c < 140:
            return "Cooling"
        case 150:
            return "Hot water"
@@ -424,5 +423,7 @@ def ConvertHeatPumpStatus(number: int) -> str:
            return "Selftest"
        case 180:
            return "Manual control"
+       case d if 200 <= d <= 240:
+           return "Defrost"
        case _:
            return "Unknown (raw value: " + str(number) + ")"
