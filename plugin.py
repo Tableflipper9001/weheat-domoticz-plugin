@@ -22,6 +22,8 @@
             <li>Temperature - Heating flow temperature setpoint</li>
             <li>Temperature - Heatpump flow temperature</li>
             <li>Temperature - Heatpump return temperature</li>
+            <li>Temperature - Outside air temperature in</li>
+            <li>Temperature - Outside air temperature out</li>
             <li>Percentage  - COP</li>
             <li>kWh - Electrical power</li>
             <li>kWh - Heat power</li>
@@ -247,6 +249,8 @@ class WeHeatPlugin:
         self.createDevice(4 , "Heating flow temperature setpoint", "Temperature", "t_thermostat_setpoint")
         self.createDevice(5 , "Heatpump flow temperature"        , "Temperature", "t_water_out")
         self.createDevice(6 , "Heatpump return temperature"      , "Temperature", "t_water_in")
+        self.createDevice(17, "Outside air temperature in"       , "Temperature", "t_air_in")
+        self.createDevice(18, "Outside air temperature out"      , "Temperature", "t_air_out")
         self.createDevice(7 , "Electrical power"                 , "kWh"        , "cm_mass_power_in")
         self.createDevice(8 , "Heat power"                       , "kWh"        , "cm_mass_power_out")
         self.createDevice(9 , "Compressor usage"                 , "Percentage" , "Math")
