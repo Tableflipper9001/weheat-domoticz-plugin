@@ -50,6 +50,7 @@ Check if we can do this from code instead on load time.
 * Limit COP in range 0 to 10. COP becomes negative in defrost cycles and may get unreleastic peaks due to bad sample period.
 * Fix the state variable not being of HeatPumpStatusEnum type, instead State from HeatPump
 * Stop the plugin from self (unfinished)
+* Add the outside air temperature sensors
 
 ### v0.0.3
 * Fix the compressor usage properly based on the used heatpump (different Pnominal)
