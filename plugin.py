@@ -66,8 +66,8 @@ from keycloak import KeycloakOpenID
 from keycloak import KeycloakAuthenticationError, KeycloakPostError
 from typing import List
 from typing import Optional
-from weheat import HeatPumpModel
-from weheat import ApiException
+from weheat import HeatPumpModel, ApiException
+from weheat import ApiClient, Configuration, EnergyLogApi
 from weheat.abstractions.heat_pump import HeatPump
 from weheat.abstractions.discovery import HeatPumpDiscovery
 
@@ -219,17 +219,14 @@ class WeHeatPlugin:
 
     async def pollEnergyLog(self):
         Domoticz.Log('Sampling heatpump for energy consumption...')
-        utcnow = datetime.datetime.now(timezone.utc)
+        return #until the backend responds again
+        utcnow = datetime.now(timezone.utc)
         start = utcnow.replace(minute=0, second=0, microsecond=0)
         config = Configuration(host=sApiUrl, access_token=self._AccessToken)
         async with ApiClient(configuration=config) as client:
             try:
-                response = await EnergyLogApi(client).api_v1_energy_logs_heat_pump_id_get_with_http_info(
-                    heat_pump_id=self._Uuid,
-                    start_time=start,
-                    end_time=utcnow,
-                    interval='Hour')
-            except:
+                response = await EnergyLogApi(client).api_v1_energy_logs_heat_pump_id_get_with_http_info(heat_pump_id=self._HeatPumpUuid, start_time=start, end_time=utcnow, interval='Hour')
+            except ApiException as e:
                 if(e.status == 401): # Unauthorized
                     Domoticz.Error('WeHeat login has expired, trying to login again...')
                     self.login()
@@ -240,7 +237,8 @@ class WeHeatPlugin:
                 else:
                     Domoticz.Error(f"Unhandled HTTP exception: {e}, please report to plugin maintainer")
                 return
-             if response.status_code == 200:
+
+            if response.status_code == 200:
                 #energy_log = vars(response.data)
                 Domoticz.Log(f"Energy sample: {response.data}")
 
@@ -276,7 +274,7 @@ class WeHeatPlugin:
             self.createDevice(15, "Gas boiler state"             , "Switch"     , "control_bridge_status_decoded_gas_boiler")
         else:
             self.createDevice(16, "Electric heating state"       , "Switch"     , "control_bridge_status_decoded_electric_heater")
-            # TODO: DHW sensors
+        # TODO: DHW sensors
 
         # Set hearbeat to the maximum, multiply the sampling frequency by counter in the hearbeat function
         Domoticz.Heartbeat(30)
