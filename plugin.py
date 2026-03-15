@@ -77,7 +77,8 @@ sApiUrl = 'https://api.weheat.nl/third_party'
 sRealmName = 'Weheat'
 sClientId = 'WeheatCommunityAPI'
 sClientSecret = ''
-sThrottleFactor = 4 # * 30 seconds
+sHeatpumpLogInterval = 4 # * 30 seconds
+sEnergyLogInterval =  30 # * 30 seconds
 sMinCOP = 0
 sMaxCOP = 10 * 100
 
@@ -92,7 +93,7 @@ class WeHeatPlugin:
         self._KeyCloakOpenId: KeycloakOpenID | None = None
         self._loggedIn = False
         self._readyForWork = False
-        self._boilerType: ReadableBoilerType | None = None
+        self._has_ch_boiler = False
         self._hasDhw = False
         self._counter = 1
 
@@ -137,7 +138,7 @@ class WeHeatPlugin:
           heatpumps = await HeatPumpDiscovery.async_discover_active(api_url=sApiUrl, access_token=self._AccessToken)
         except ApiException as e:
             if(e.status >= 500 or e.status <= 599): # Service exception
-                Domoticz.Error(f"Service exception({e.status}), is the WeHeat backend alive?")
+                Domoticz.Error(f"WeHeat server side exception({e.status}): {e.reason}")
             else:
                 Domoticz.Error(f"Unhandled HTTP exception: {e}, please report to plugin maintainer")
             return
@@ -146,16 +147,16 @@ class WeHeatPlugin:
             Domoticz.Status('WARNING: response data contains more than 1 heatpump, picking the first one!')
         self._HeatPumpUuid = heatpumps[0].uuid
         self._hasDhw = heatpumps[0].has_dhw
+        #self._has_ch_boiler = heatpumps[0].has_ch_boiler # next release
+        self._has_ch_boiler = True # for now
         Domoticz.Status("Using heatpump UUID '" + self._HeatPumpUuid + "'")
-        #self._boilerType = MAP_BOILER_TYPE[response.data[0].boiler_type]
         #TODO: Lock in for testing, to be fixed before new release
-        self._boilerType = ReadableBoilerType.ON_OFF_BOILER
-        if self._boilerType == ReadableBoilerType.ON_OFF_BOILER or self._boilerType == ReadableBoilerType.OT_BOILER:
+        if self._has_ch_boiler:
             Domoticz.Status('Detected a hybrid configuration')
         else:
             Domoticz.Status('Detected an all-electric configuration')
 
-    async def pollHeatPumpLog(self):
+    async def pollHeatpumpLog(self):
         Domoticz.Log('Sampling heatpump...')
         heatpump = HeatPump(api_url=sApiUrl, uuid=self._HeatPumpUuid)
         try:
@@ -165,15 +166,13 @@ class WeHeatPlugin:
                 Domoticz.Error('WeHeat login has expired, trying to login again...')
                 self.login()
             elif(e.status == 429): # Too Many requests
-                Domoticz.Error('Too many requests, ask plugin maintainer to re-adjust sThrottleFactor')
+                Domoticz.Error('Too many requests, ask plugin maintainer to re-adjust the Heatpump log interval')
             elif(e.status >= 500 or e.status <= 599): # Service exception
-                Domoticz.Error(f"Service exception({e.status}, is the WeHeat backend alive?")
+                Domoticz.Error(f"Weheat server side exception({e.status}): {e.reason}")
             else:
                 Domoticz.Error(f"Unhandled HTTP exception: {e}, please report to plugin maintainer")
             return
 
-        Domoticz.Status(f"{heatpump.energy_total}")
-        Domoticz.Status(f"{heatpump.energy_output}")
         raw_data = heatpump.raw_content
         for unit in Devices:
             Device = Devices[unit]
@@ -218,6 +217,9 @@ class WeHeatPlugin:
             else:
                 Domoticz.Error(f"Cannot handle sample for {Device.Name}")
 
+    async def pollEnergyLog(self):
+        Domoticz.Log('Sampling heatpump for energy consumption...')
+
     def onStart(self):
         Domoticz.Status('WeHeat plugin is starting')
 
@@ -228,8 +230,6 @@ class WeHeatPlugin:
 
         # Fetch heatpump configuration
         asyncio.run(self.fetchSetup())
-        if self._boilerType == None:
-            return
 
         # Create sensors based on heatpump type if they do not exist
         self.createDevice(1 , "Room temperature"                 , "Temperature", "t_room")
@@ -248,7 +248,7 @@ class WeHeatPlugin:
         self.createDevice(12, "State"                            , "Text"       , "state")
         self.createDevice(13, "Cooling state"                    , "Text"       , "cooling_status")
         self.createDevice(14, "Error"                            , "Text"       , "error")
-        if self._boilerType == ReadableBoilerType.ON_OFF_BOILER or self._boilerType == ReadableBoilerType.OT_BOILER:
+        if self._has_ch_boiler:
             self.createDevice(15, "Gas boiler state"             , "Switch"     , "control_bridge_status_decoded_gas_boiler")
         else:
             self.createDevice(16, "Electric heating state"       , "Switch"     , "control_bridge_status_decoded_electric_heater")
@@ -293,11 +293,13 @@ class WeHeatPlugin:
         if not self._readyForWork:
             return
         self.refreshToken()
-        if self._counter % sThrottleFactor == 0:
-            self._counter = 1
-            asyncio.run(self.pollHeatPumpLog())
-        else:
-            self._counter += 1
+
+        if self._counter % sEnergyLogInterval == 0:
+            self._counter = 0
+            asyncio.run(self.pollEnergyLog())
+        if self._counter % sHeatpumpLogInterval == 0:
+            asyncio.run(self.pollHeatpumpLog())
+        self._counter += 1
 
     def createDevice(self, Id, Name, Type, ExternalId):
         if not Id in Devices:
@@ -355,22 +357,6 @@ def DumpConfigToLog():
         Device = Devices[DeviceName]
         Domoticz.Debug("Device ID:       '" + str(Device.DeviceID) + "'")
     return
-
-# Source of definition:
-# https://github.com/wefabricate/wh-python/blob/main/weheat/models/boiler_type.py
-# Use this for logic so convert to a readable enum
-class ReadableBoilerType(IntEnum):
-    UNKNOWN = 0
-    NO_BOILER = 1
-    ON_OFF_BOILER = 2
-    OT_BOILER = 3
-
-MAP_BOILER_TYPE = {
-    BoilerType.NUMBER_0: ReadableBoilerType.UNKNOWN,
-    BoilerType.NUMBER_1: ReadableBoilerType.NO_BOILER,
-    BoilerType.NUMBER_2: ReadableBoilerType.ON_OFF_BOILER,
-    BoilerType.NUMBER_3: ReadableBoilerType.OT_BOILER
-}
 
 # Source of definition:
 # https://github.com/wefabricate/wh-python/blob/main/weheat/abstractions/heat_pump.py
