@@ -61,12 +61,12 @@ import Domoticz
 import asyncio
 import time
 from enum import IntEnum
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from keycloak import KeycloakOpenID
 from keycloak import KeycloakAuthenticationError, KeycloakPostError
 from typing import List
 from typing import Optional
-from weheat import BoilerType, HeatPumpModel
+from weheat import HeatPumpModel
 from weheat import ApiException
 from weheat.abstractions.heat_pump import HeatPump
 from weheat.abstractions.discovery import HeatPumpDiscovery
@@ -219,6 +219,30 @@ class WeHeatPlugin:
 
     async def pollEnergyLog(self):
         Domoticz.Log('Sampling heatpump for energy consumption...')
+        utcnow = datetime.datetime.now(timezone.utc)
+        start = utcnow.replace(minute=0, second=0, microsecond=0)
+        config = Configuration(host=sApiUrl, access_token=self._AccessToken)
+        async with ApiClient(configuration=config) as client:
+            try:
+                response = await EnergyLogApi(client).api_v1_energy_logs_heat_pump_id_get_with_http_info(
+                    heat_pump_id=self._Uuid,
+                    start_time=start,
+                    end_time=utcnow,
+                    interval='Hour')
+            except:
+                if(e.status == 401): # Unauthorized
+                    Domoticz.Error('WeHeat login has expired, trying to login again...')
+                    self.login()
+                elif(e.status == 429): # Too Many requests
+                    Domoticz.Error('Too many requests, ask plugin maintainer to re-adjust the Heatpump log interval')
+                elif(e.status >= 500 or e.status <= 599): # Service exception
+                    Domoticz.Error(f"Weheat server side exception({e.status}): {e.reason}")
+                else:
+                    Domoticz.Error(f"Unhandled HTTP exception: {e}, please report to plugin maintainer")
+                return
+             if response.status_code == 200:
+                #energy_log = vars(response.data)
+                Domoticz.Log(f"Energy sample: {response.data}")
 
     def onStart(self):
         Domoticz.Status('WeHeat plugin is starting')
