@@ -279,7 +279,30 @@ class WeHeatPlugin:
             self.createDevice(15, "Gas boiler state"             , "Switch"     , "control_bridge_status_decoded_gas_boiler")
         else:
             self.createDevice(16, "Electric heating state"       , "Switch"     , "control_bridge_status_decoded_electric_heater")
-        # TODO: DHW sensors
+        # self.createDevice(20, "Total Energy In", "kWh", "Math")
+        # self.createDevice(21, "Heating Energy In", "kWh", "totalEInHeating")
+        # self.createDevice(22, "Heating Defrost Energy In", "kWh", "totalEInHeatingDefrost")
+        # self.createDevice(23, "Standby Energy In", "kWh", "totalEInStandby")
+        # self.createDevice(24, "Cooling Energy In", "kWh", "totalEInCooling")
+
+        # self.createDevice(25, "Total Energy Out", "kWh", "Math")
+        # self.createDevice(26, "Heating Energy Out", "kWh", "totalEOutHeating")
+        # self.createDevice(27, "Heating Defrost Energy Out", "kWh", "totalEOutHeatingDefrost")
+        # self.createDevice(28, "Standby Energy Out", "kWh", "totalEOutStandby")
+        # self.createDevice(29, "Cooling Energy Out", "kWh", "totalEOutCooling")
+        #
+        # self.createDevice(30, "Indoor Unit Standby Energy In", "kWh", "totalEInIUStandby")
+        # self.createDevice(31, "Indoor Unit Heating Energy In", "kWh", "totalEInIUHeating")
+        # self.createDevice(32, "Indoor Unit Standby Energy In", "kWh", "totalEInIUHeatingDefrost")
+        # self.createDevice(33, "Indoor Unit Standby Energy In", "kWh", "totalEInIUCooling")
+
+        # if self._hasDhw:
+        #     self.createDevice(40, "DHW Defrost Energy In", "kWh", "totalEInDhwDefrost")
+        #     self.createDevice(41, "DHW Energy In", "kWh", "totalEInDhw")
+        #     self.createDevice(42, "DHW Indoor Unit Energy In", "kWh", "totalEInIUDhw")
+        #     self.createDevice(43, "DHW Defrost Indoor Unit Energy In", "kWh", "totalEInIUDhwDefrost")
+        #     self.createDevice(44, "DHW Defrost Energy Out", "kWh", "totalEOutDhwDefrost")
+        #     self.createDevice(45, "DHW Energy Out", "kWh", "totalEOutDhw")
 
         # Set hearbeat to the maximum, multiply the sampling frequency by counter in the hearbeat function
         Domoticz.Heartbeat(30)
