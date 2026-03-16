@@ -180,7 +180,7 @@ class WeHeatPlugin:
                 # Devices that require calculation
                 nValue = 0
                 if "COP" in Device.Name:
-                    nValue = 0 if heatpump.cop is None else heatpump.cop
+                    nValue = 0 if heatpump.cop is None else heatpump.cop * 100
                     nValue = max(nValue, sMinCOP) # cutoff negative to MinCOP
                     nValue = min(nValue, sMaxCOP) # cutoff positive beyond MaxCOP
                 if "Power from air" in Device.Name:
