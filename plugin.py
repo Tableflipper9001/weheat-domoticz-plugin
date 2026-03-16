@@ -11,8 +11,10 @@
         <a href="https://github.com/wefabricate/wh-python"> WeHeat backend</a><br/>
         <h3>Features</h3>
         <ul style="list-style-type:square">
-            <li>Basic determination on setup (hybrid vs. all electric)</li>
-            <li>Read out some sensors, see devices for the list</li>
+            <li>Basic determination on setup (hybrid/all electric/with dhw/without dhw)</li>
+            <li>Read out current heatpump status</li>
+            <li>Read out total energy aggregate</li>
+            <li>Import energy aggregate information from history</li>
         </ul>
         <h3>Devices</h3>
         <ul style="list-style-type:square">
@@ -41,6 +43,7 @@
     <params>
         <param field="Username" label="Username" required="true"/>
         <param field="Password" label="Password" required="true" password="true"/>
+        <param field="ImportDate" label="Import start date (yyyy-mm-dd)" required="false"/>
         <param field="Mode6" label="Debug" width="150px">
             <options>
                 <option label="None" value="0"  default="true" />
@@ -218,14 +221,15 @@ class WeHeatPlugin:
                 Domoticz.Error(f"Cannot handle sample for {Device.Name}")
 
     async def pollEnergyLog(self):
-        Domoticz.Log('Sampling heatpump for energy consumption...')
-        return #until the backend responds again
-        utcnow = datetime.now(timezone.utc)
-        start = utcnow.replace(minute=0, second=0, microsecond=0)
+        Domoticz.Log('Updating total energy consumption...')
+
+
+    async def importEnergyLogHistory(self, start_date: datetime):
+        end_date = datetime.now(timezone.utc)
         config = Configuration(host=sApiUrl, access_token=self._AccessToken)
         async with ApiClient(configuration=config) as client:
             try:
-                response = await EnergyLogApi(client).api_v1_energy_logs_heat_pump_id_get_with_http_info(heat_pump_id=self._HeatPumpUuid, start_time=start, end_time=utcnow, interval='Hour')
+                response = await EnergyLogApi(client).api_v1_energy_logs_heat_pump_id_get_with_http_info(heat_pump_id=self._HeatPumpUuid, start_time=start_date, end_time=end_date, interval='Day')
             except ApiException as e:
                 if(e.status == 401): # Unauthorized
                     Domoticz.Error('WeHeat login has expired, trying to login again...')
@@ -239,8 +243,9 @@ class WeHeatPlugin:
                 return
 
             if response.status_code == 200:
-                #energy_log = vars(response.data)
-                Domoticz.Log(f"Energy sample: {response.data}")
+                for energy_object in response.data:
+                    Domoticz.Status(f"Importing data for date {energy_object['timeBucket']}")
+                    # complete import code
 
     def onStart(self):
         Domoticz.Status('WeHeat plugin is starting')
@@ -279,6 +284,16 @@ class WeHeatPlugin:
         # Set hearbeat to the maximum, multiply the sampling frequency by counter in the hearbeat function
         Domoticz.Heartbeat(30)
         self._readyForWork = True
+
+        if Parameters['ImportDate'] is not None:
+            start_date = Parameters['ImportDate']
+            timeformat = "%Y-%m-%d"
+            try:
+                datetime.strptime(start_date, timeformat)
+                Domoticz.Log(f"ImportDate specified, starting import from {start_date}...")
+                asyncio.run(self.importEnergyLogHistory(start_date))
+            except:
+                Domoticz.Error("Invalid date time format provided, expecting yyyy-mm-dd")
 
         # Dump config
         if Parameters["Mode6"] != "0":
