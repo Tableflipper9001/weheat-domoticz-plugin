@@ -43,7 +43,7 @@
     <params>
         <param field="Username" label="Username" required="true"/>
         <param field="Password" label="Password" required="true" password="true"/>
-        <param field="ImportDate" label="Import start date (yyyy-mm-dd)" required="false"/>
+        <param field="Mode1" label="Import start date (yyyy-mm-dd)" required="false"/>
         <param field="Mode6" label="Debug" width="150px">
             <options>
                 <option label="None" value="0"  default="true" />
@@ -62,17 +62,13 @@
 
 import Domoticz
 import asyncio
-import time
-from enum import IntEnum
 from datetime import datetime, timedelta, timezone
 from keycloak import KeycloakOpenID
 from keycloak import KeycloakAuthenticationError, KeycloakPostError
-from typing import List
 from typing import Optional
-from weheat import HeatPumpModel, ApiException
-from weheat import ApiClient, Configuration, EnergyLogApi
-from weheat.abstractions.heat_pump import HeatPump
-from weheat.abstractions.discovery import HeatPumpDiscovery
+from weheat import ApiClient, ApiException, Configuration
+from weheat.api import EnergyLogApi
+from weheat.abstractions import HeatPumpDiscovery, HeatPump
 
 # global constants
 sAuthUrl = 'https://auth.weheat.nl/auth/'
@@ -84,6 +80,8 @@ sHeatpumpLogInterval = 4 # * 30 seconds
 sEnergyLogInterval =  30 # * 30 seconds
 sMinCOP = 0
 sMaxCOP = 10 * 100
+sLogSourceHeatpump = "Heatpump"
+sLogSourceEnergy = "Energy"
 
 class WeHeatPlugin:
     enabled = False
@@ -96,8 +94,9 @@ class WeHeatPlugin:
         self._KeyCloakOpenId: KeycloakOpenID | None = None
         self._loggedIn = False
         self._readyForWork = False
-        self._has_ch_boiler = False
+        self._hasChBoiler = False
         self._hasDhw = False
+        self._hasCooling = False
         self._counter = 1
 
     def login(self):
@@ -106,7 +105,6 @@ class WeHeatPlugin:
                                               client_id=sClientId,
                                               realm_name=sRealmName,
                                               client_secret_key=sClientSecret)
-        # TODO: Check if we can just stop the plugin instead of ghosting CPU cycles
         try:
             token_response = self._KeyCloakOpenId.token(Parameters['Username'], Parameters['Password'])
         except KeycloakAuthenticationError as e:
@@ -140,89 +138,113 @@ class WeHeatPlugin:
         try:
           heatpumps = await HeatPumpDiscovery.async_discover_active(api_url=sApiUrl, access_token=self._AccessToken)
         except ApiException as e:
-            if(e.status >= 500 or e.status <= 599): # Service exception
-                Domoticz.Error(f"WeHeat server side exception({e.status}): {e.reason}")
-            else:
-                Domoticz.Error(f"Unhandled HTTP exception: {e}, please report to plugin maintainer")
+            self.handleApiException(e)
             return
 
         if len(heatpumps) > 1:
             Domoticz.Status('WARNING: response data contains more than 1 heatpump, picking the first one!')
         self._HeatPumpUuid = heatpumps[0].uuid
         self._hasDhw = heatpumps[0].has_dhw
-        #self._has_ch_boiler = heatpumps[0].has_ch_boiler # next release
-        self._has_ch_boiler = True # for now
-        Domoticz.Status("Using heatpump UUID '" + self._HeatPumpUuid + "'")
+        #self._hasChBoiler = heatpumps[0].has_ch_boiler # next release
         #TODO: Lock in for testing, to be fixed before new release
-        if self._has_ch_boiler:
+        self._hasChBoiler = True # for now
+        Domoticz.Status("Using heatpump UUID '" + self._HeatPumpUuid + "'")
+        if self._hasChBoiler:
             Domoticz.Status('Detected a hybrid configuration')
         else:
             Domoticz.Status('Detected an all-electric configuration')
 
+    def GetValue(self, hp: HeatPump, Id: str):
+        if hasattr(hp, Id):
+            return getattr(hp, Id)
+        if Id in hp.raw_content:
+            return hp.raw_content[Id]
+        Domoticz.Error(f"Could not retrieve {Id} from HeatPump object")
+        return None
+
+    def PostProcess(self, dev, sample, hp: Optional[HeatPump] = None):
+        if dev.Type == 243 and dev.SubType == 19 and sample is None:
+            sample = 'None'
+        elif sample is None:
+            sample = 0
+
+        if 'COP' in dev.Name:
+            sample = sample * 100
+            sample = max(sample, sMinCOP) # cutoff negative to MinCOP
+            sample = min(sample, sMaxCOP) # cutoff positive beyond MaxCOP
+        if 'Power from air' in dev.Name and hp is not None:
+            sample = 0 if hp.power_output is None or hp.power_input is None else hp.power_output - hp.power_input
+            sample = max(sample, 0) # cutoff negative values of defrost
+        return sample
+
+    def UpdateDatabase(self, dev, sample):
+        nValue = 0
+        sValue = ""
+        # TODO: check if a registry pattern (in form of a dict) can be beneficial here
+        # in order to prevent the long if elif else chain
+        if (dev.Type == 80 or
+           (dev.Type == 243 and dev.SubType == 6)): # Temperature or Percentage
+            sValue = f"{sample:.1f}"
+        elif dev.Type == 243 and dev.SubType == 19: # Text
+            sValue = str(sample)
+        elif dev.Type == 243 and dev.SubType == 29: # kWh
+            if dev.sValue.count(';') > 0:
+                power, energy = map(float, dev.sValue.split(";"))
+            else:
+                energy = 0
+            if 'EnergyMeterMode' in dev.Options and dev.Options['EnergyMeterMode'] is '1':
+                sValue = f"{sample:.1f};{energy:.1f}"
+            else:
+                sample = energy + sample
+                sValue = f"{0:.1f};{sample:.1f}"
+        elif dev.Type == 244: # Switch
+            nValue = 0 if not isinstance(sample, int) else sample
+        else:
+            Domoticz.Error(f"Processing of sensor '{dev.Name}' with Type '{dev.Type}' and SubType '{dev.SubType}' not supported")
+            return
+        Domoticz.Log(f"Device name '{dev.Name}', new nValue: '{nValue}', new sValue: '{sValue}'")
+        dev.Update(nValue=nValue, sValue=sValue)
+
     async def pollHeatpumpLog(self):
-        Domoticz.Log('Sampling heatpump...')
+        Domoticz.Log('Retrieving heatpump current log...')
         heatpump = HeatPump(api_url=sApiUrl, uuid=self._HeatPumpUuid)
         try:
-            await heatpump.async_get_status(self._AccessToken)
+            await heatpump.async_get_logs(self._AccessToken)
         except ApiException as e:
-            if(e.status == 401): # Unauthorized
-                Domoticz.Error('WeHeat login has expired, trying to login again...')
-                self.login()
-            elif(e.status == 429): # Too Many requests
-                Domoticz.Error('Too many requests, ask plugin maintainer to re-adjust the Heatpump log interval')
-            elif(e.status >= 500 or e.status <= 599): # Service exception
-                Domoticz.Error(f"Weheat server side exception({e.status}): {e.reason}")
-            else:
-                Domoticz.Error(f"Unhandled HTTP exception: {e}, please report to plugin maintainer")
+            self.handleApiException(e)
             return
 
-        raw_data = heatpump.raw_content
         for unit in Devices:
             Device = Devices[unit]
-            if Device.Options['ExternalId'] == 'Math':
-                # Devices that require calculation
-                nValue = 0
-                if "COP" in Device.Name:
-                    nValue = 0 if heatpump.cop is None else heatpump.cop * 100
-                    nValue = max(nValue, sMinCOP) # cutoff negative to MinCOP
-                    nValue = min(nValue, sMaxCOP) # cutoff positive beyond MaxCOP
-                if "Power from air" in Device.Name:
-                    nValue = 0 if heatpump.power_output is None or heatpump.power_input is None else heatpump.power_output - heatpump.power_input
-                    nValue = max(nValue, 0)
-                if "Compressor usage" in Device.Name:
-                    nValue = heatpump.compressor_percentage
-                sValue = f"{nValue:.1f}"
-                if 'EnergyMeterMode' in Device.Options: # No energy sensor available, just power so calculate
-                    sValue += ';0'
-                Domoticz.Debug(f"{Device.Name} = {sValue}")
-                Device.Update(nValue=0, sValue=sValue)
-            elif Device.Type == 244: # switch
-                sValue = raw_data[Device.Options['ExternalId']]
-                Domoticz.Debug(f"{Device.Name} = {sValue}")
-                Device.Update(nValue=sValue, sValue="")
-            elif Device.Type == 243 and Device.SubType == 19: # text
-                nValue = raw_data[Device.Options['ExternalId']]
-                if "State" in Device.Name: # Warning: Possible name collision here
-                    # Requires translation of enum
-                    sValue = ConvertHeatPumpStatus(nValue)
-                else:
-                    sValue = str(nValue)
-                Domoticz.Debug(f"{Device.Name} = {sValue}")
-                Device.Update(nValue=0, sValue=sValue)
-            elif Device.Options['ExternalId'] in raw_data:
-                if raw_data[Device.Options['ExternalId']] is not None:
-                    sValue = raw_data[Device.Options['ExternalId']]
-                    sValue = f"{sValue:.1f}"
-                    if 'EnergyMeterMode' in Device.Options: # No energy sensor available, just power so calculate
-                        sValue += ';0'
-                    Domoticz.Debug(f"{Device.Name} = {sValue}")
-                    Device.Update(nValue=0, sValue=sValue)
+            if 'LogSource' in Device.Options and Device.Options['LogSource'] != sLogSourceHeatpump:
+                continue
+            if 'ExternalId' in Device.Options and Device.Options['ExternalId'] == 'Math':
+                value = self.PostProcess(Device, 0, heatpump)
             else:
-                Domoticz.Error(f"Cannot handle sample for {Device.Name}")
+                value = self.GetValue(heatpump, Device.Options['ExternalId'])
+                value = self.PostProcess(Device, value)
+            self.UpdateDatabase(Device, value)
 
     async def pollEnergyLog(self):
-        Domoticz.Log('Updating total energy consumption...')
-
+        return
+        Domoticz.Log('Retrieving heatpump energy totals...')
+        heatpump = HeatPump(api_url=sApiUrl, uuid=self._HeatPumpUuid)
+        try:
+            await heatpump.async_get_energy(self._AccessToken)
+        except ApiException as e:
+            self.handleApiException(e)
+            return
+        # put in function? duplicate with pollHeatpumpLog
+        for unit in Devices:
+            Device = Devices[unit]
+            if 'LogSource' in Device.Options and Device.Options['LogSource'] != sLogSourceEnergy:
+                continue
+            if 'ExternalId' in Device.Options and Device.Options['ExternalId'] == 'Math':
+                value = self.PostProcess(Device, 0, heatpump)
+            else:
+                value = self.GetValue(heatpump, Device.Options['ExternalId'])
+                value = self.PostProcess(Device, value)
+            self.UpdateDatabase(Device, value)
 
     async def importEnergyLogHistory(self, start_date: datetime):
         end_date = datetime.now(timezone.utc)
@@ -231,21 +253,32 @@ class WeHeatPlugin:
             try:
                 response = await EnergyLogApi(client).api_v1_energy_logs_heat_pump_id_get_with_http_info(heat_pump_id=self._HeatPumpUuid, start_time=start_date, end_time=end_date, interval='Day')
             except ApiException as e:
-                if(e.status == 401): # Unauthorized
-                    Domoticz.Error('WeHeat login has expired, trying to login again...')
-                    self.login()
-                elif(e.status == 429): # Too Many requests
-                    Domoticz.Error('Too many requests, ask plugin maintainer to re-adjust the Heatpump log interval')
-                elif(e.status >= 500 or e.status <= 599): # Service exception
-                    Domoticz.Error(f"Weheat server side exception({e.status}): {e.reason}")
-                else:
-                    Domoticz.Error(f"Unhandled HTTP exception: {e}, please report to plugin maintainer")
+                self.handleApiException(e)
                 return
 
             if response.status_code == 200:
-                for energy_object in response.data:
-                    Domoticz.Status(f"Importing data for date {energy_object['timeBucket']}")
-                    # complete import code
+                for energyLog in response.data:
+                    energyLog = vars(energyLog)
+                    Domoticz.Status(f"Importing data for date {energyLog['time_bucket']}")
+                    for unit in Devices:
+                        Device = Devices[unit]
+                        if 'LogSource' in Device.Options and Device.Options['LogSource'] != sLogSourceEnergy:
+                            continue
+
+                        power, energy = map(float, Device.sValue.split(";"))
+                        if 'Total Energy In' in Device.Name:
+                            total = sum(value for key, value in energyLog.items() if key.startswith("total_ein"))
+                        elif 'Total Energy Out' in Device.Name:
+                            total = sum(value for key, value in energyLog.items() if key.startswith("total_e_out"))
+                        else:
+                            total = energyLog[Device.Options['ExternalId']]
+                        total *= 1000
+                        total += energy
+                        sValue = f"{0:.1f};{total:.1f};{datetime.strftime(energyLog['time_bucket'],'%Y-%m-%d')}"
+                        # Device.Options['AddDBLogEntry'] = 'true'
+                        # Device.Update(nValue=0, sValue=sValue)
+                        # Device.Options['AddDBLogEntry'] = 'false'
+                        Domoticz.Log(f"{sValue}")
 
     def onStart(self):
         Domoticz.Status('WeHeat plugin is starting')
@@ -259,69 +292,59 @@ class WeHeatPlugin:
         asyncio.run(self.fetchSetup())
 
         # Create sensors based on heatpump type if they do not exist
-        self.createDevice(1 , "Room temperature"                 , "Temperature", "t_room")
-        self.createDevice(2 , "Room temperature setpoint"        , "Temperature", "t_room_target")
-        self.createDevice(3 , "Heating flow temperature"         , "Temperature", "t_water_house_in")
-        self.createDevice(4 , "Heating flow temperature setpoint", "Temperature", "t_thermostat_setpoint")
-        self.createDevice(5 , "Heatpump flow temperature"        , "Temperature", "t_water_out")
-        self.createDevice(6 , "Heatpump return temperature"      , "Temperature", "t_water_in")
-        self.createDevice(17, "Outside air temperature in"       , "Temperature", "t_air_in")
-        self.createDevice(18, "Outside air temperature out"      , "Temperature", "t_air_out")
-        self.createDevice(7 , "Electrical power"                 , "kWh"        , "cm_mass_power_in")
-        self.createDevice(8 , "Heat power"                       , "kWh"        , "cm_mass_power_out")
-        self.createDevice(9 , "Compressor usage"                 , "Percentage" , "Math")
-        self.createDevice(10, "COP"                              , "Percentage" , "Math")
-        self.createDevice(11, "Power from air"                   , "kWh"        , "Math")
-        self.createDevice(12, "State"                            , "Text"       , "state")
-        self.createDevice(13, "Cooling state"                    , "Text"       , "cooling_status")
-        self.createDevice(14, "Error"                            , "Text"       , "error")
-        if self._has_ch_boiler:
-            self.createDevice(15, "Gas boiler state"             , "Switch"     , "control_bridge_status_decoded_gas_boiler")
+        self.createDevice(1 , "Room temperature"                     , "Temperature", { 'LogSource': sLogSourceHeatpump, 'ExternalId': 't_room'})
+        self.createDevice(2 , "Room temperature setpoint"            , "Temperature", { 'LogSource': sLogSourceHeatpump, 'ExternalId': 't_room_target'})
+        self.createDevice(3 , "Heating flow temperature"             , "Temperature", { 'LogSource': sLogSourceHeatpump, 'ExternalId': 't_water_house_in'})
+        self.createDevice(4 , "Heating flow temperature setpoint"    , "Temperature", { 'LogSource': sLogSourceHeatpump, 'ExternalId': 't_thermostat_setpoint'})
+        self.createDevice(5 , "Heatpump flow temperature"            , "Temperature", { 'LogSource': sLogSourceHeatpump, 'ExternalId': 't_water_out'})
+        self.createDevice(6 , "Heatpump return temperature"          , "Temperature", { 'LogSource': sLogSourceHeatpump, 'ExternalId': 't_water_in'})
+        self.createDevice(17, "Outside air temperature in"           , "Temperature", { 'LogSource': sLogSourceHeatpump, 'ExternalId': 't_air_in'})
+        self.createDevice(18, "Outside air temperature out"          , "Temperature", { 'LogSource': sLogSourceHeatpump, 'ExternalId': 't_air_out'})
+        self.createDevice(7 , "Electrical power"                     , "kWh"        , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'power_input' , 'EnergyMeterMode': '1'})
+        self.createDevice(8 , "Heat power"                           , "kWh"        , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'power_output', 'EnergyMeterMode': '1'})
+        self.createDevice(9 , "Compressor usage"                     , "Percentage" , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'compressor_percentage'})
+        self.createDevice(10, "COP"                                  , "Percentage" , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'cop'})
+        self.createDevice(11, "Power from air"                       , "kWh"        , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'Math'})
+        self.createDevice(12, "State"                                , "Text"       , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'heat_pump_state'})
+        self.createDevice(13, "Cooling state"                        , "Text"       , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'cooling_status'})
+        self.createDevice(14, "Error"                                , "Text"       , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'error'})
+        if self._hasChBoiler:
+            self.createDevice(15, "Gas boiler state"                 , "Switch"     , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'control_bridge_status_decoded_gas_boiler'})
         else:
-            self.createDevice(16, "Electric heating state"       , "Switch"     , "control_bridge_status_decoded_electric_heater")
-        # self.createDevice(20, "Total Energy In", "kWh", "Math")
-        # self.createDevice(21, "Heating Energy In", "kWh", "totalEInHeating")
-        # self.createDevice(22, "Heating Defrost Energy In", "kWh", "totalEInHeatingDefrost")
-        # self.createDevice(23, "Standby Energy In", "kWh", "totalEInStandby")
-        # self.createDevice(24, "Cooling Energy In", "kWh", "totalEInCooling")
+            self.createDevice(16, "Electric heating state"           , "Switch"     , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'control_bridge_status_decoded_electric_heater'})
 
-        # self.createDevice(25, "Total Energy Out", "kWh", "Math")
-        # self.createDevice(26, "Heating Energy Out", "kWh", "totalEOutHeating")
-        # self.createDevice(27, "Heating Defrost Energy Out", "kWh", "totalEOutHeatingDefrost")
-        # self.createDevice(28, "Standby Energy Out", "kWh", "totalEOutStandby")
-        # self.createDevice(29, "Cooling Energy Out", "kWh", "totalEOutCooling")
-        #
-        # self.createDevice(30, "Indoor Unit Standby Energy In", "kWh", "totalEInIUStandby")
-        # self.createDevice(31, "Indoor Unit Heating Energy In", "kWh", "totalEInIUHeating")
-        # self.createDevice(32, "Indoor Unit Standby Energy In", "kWh", "totalEInIUHeatingDefrost")
-        # self.createDevice(33, "Indoor Unit Standby Energy In", "kWh", "totalEInIUCooling")
+        self.createDevice(20, "Total Energy In"                      , "kWh"        , { 'LogSource': sLogSourceEnergy  , 'ExternalId': 'energy_total'})
+        self.createDevice(21, "Heating Energy In"                    , "kWh"        , { 'LogSource': sLogSourceEnergy  , 'ExternalId': 'total_ein_heating'})
+        self.createDevice(22, "Heating Defrost Energy In"            , "kWh"        , { 'LogSource': sLogSourceEnergy  , 'ExternalId': 'total_ein_heating_defrost'})
+        self.createDevice(23, "Standby Energy In"                    , "kWh"        , { 'LogSource': sLogSourceEnergy  , 'ExternalId': 'total_ein_standby'})
+        self.createDevice(24, "Cooling Energy In"                    , "kWh"        , { 'LogSource': sLogSourceEnergy  , 'ExternalId': 'total_ein_cooling'})
 
-        # if self._hasDhw:
-        #     self.createDevice(40, "DHW Defrost Energy In", "kWh", "totalEInDhwDefrost")
-        #     self.createDevice(41, "DHW Energy In", "kWh", "totalEInDhw")
-        #     self.createDevice(42, "DHW Indoor Unit Energy In", "kWh", "totalEInIUDhw")
-        #     self.createDevice(43, "DHW Defrost Indoor Unit Energy In", "kWh", "totalEInIUDhwDefrost")
-        #     self.createDevice(44, "DHW Defrost Energy Out", "kWh", "totalEOutDhwDefrost")
-        #     self.createDevice(45, "DHW Energy Out", "kWh", "totalEOutDhw")
+        self.createDevice(25, "Total Energy Out"                     , "kWh"        , { 'LogSource': sLogSourceEnergy  , 'ExternalId': 'energy_output'})
+        self.createDevice(26, "Heating Energy Out"                   , "kWh"        , { 'LogSource': sLogSourceEnergy  , 'ExternalId': 'total_e_out_heating'})
+        self.createDevice(27, "Heating Defrost Energy Out"           , "kWh"        , { 'LogSource': sLogSourceEnergy  , 'ExternalId': 'total_e_out_heating_defrost'})
+        self.createDevice(28, "Cooling Energy Out"                   , "kWh"        , { 'LogSource': sLogSourceEnergy  , 'ExternalId': 'total_e_out_cooling'})
+
+        if self._hasDhw:
+            self.createDevice(40, "DHW Top Temperature"              , "Temperature", { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'dhw_top_temperature'})
+            self.createDevice(41, "DHW Bottom Temperature"           , "Temperature", { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'dhw_bottom_temperature'})
+            self.createDevice(42, "DHW Defrost Energy In"            , "kWh"        , { 'LogSource': sLogSourceEnergy  , 'ExternalId': 'total_ein_dhw_defrost'})
+            self.createDevice(43, "DHW Energy In"                    , "kWh"        , { 'LogSource': sLogSourceEnergy  , 'ExternalId': 'total_ein_dhw'})
+            self.createDevice(44, "DHW Defrost Energy Out"           , "kWh"        , { 'LogSource': sLogSourceEnergy  , 'ExternalId': 'total_e_out_dhw_defrost'})
+            self.createDevice(45, "DHW Energy Out"                   , "kWh"        , { 'LogSource': sLogSourceEnergy  , 'ExternalId': 'total_e_out_dhw'})
 
         # Set hearbeat to the maximum, multiply the sampling frequency by counter in the hearbeat function
         Domoticz.Heartbeat(30)
         self._readyForWork = True
 
-        if Parameters['ImportDate'] is not None:
-            start_date = Parameters['ImportDate']
+        if 'Mode1' in Parameters:
+            start_date = Parameters['Mode1']
             timeformat = "%Y-%m-%d"
             try:
                 datetime.strptime(start_date, timeformat)
-                Domoticz.Log(f"ImportDate specified, starting import from {start_date}...")
+                Domoticz.Log(f"Import date specified, starting Energy Log import from {start_date} to now...")
                 asyncio.run(self.importEnergyLogHistory(start_date))
-            except:
+            except ValueError:
                 Domoticz.Error("Invalid date time format provided, expecting yyyy-mm-dd")
-
-        # Dump config
-        if Parameters["Mode6"] != "0":
-            Domoticz.Debugging(int(Parameters["Mode6"]))
-            DumpConfigToLog()
 
     def onStop(self):
         Domoticz.Status("WeHeat plugin is stopping")
@@ -361,16 +384,32 @@ class WeHeatPlugin:
             asyncio.run(self.pollHeatpumpLog())
         self._counter += 1
 
-    def createDevice(self, Id, Name, Type, ExternalId):
+    def createDevice(self, Id: int, Name: str, Type: str, Options: dict[str, str]):
         if not Id in Devices:
-             Domoticz.Status("Creating new sensor '" + Name + "' (" + str(Id) + ") of type '" + Type + "' with external id '" + ExternalId + "'")
-             if Type == "Switch":
-                 Domoticz.Device(Name=Name, Unit=Id, Type=244, Subtype=73, Switchtype=0, Options={'ExternalId': ExternalId}).Create()
-             else:
-                 if Type == "kWh":
-                     Domoticz.Device(Name=Name, Unit=Id, TypeName=Type, Options={'ExternalId': ExternalId, 'EnergyMeterMode': '1'}).Create()
-                 else:
-                     Domoticz.Device(Name=Name, Unit=Id, TypeName=Type, Options={'ExternalId': ExternalId}).Create()
+            Domoticz.Status(f"Creating new sensor '{Name}' ({Id}) of type '{Type}' with options '{Options}'")
+            if Type == "Switch":
+                Domoticz.Device(Name=Name, Unit=Id, Type=244, Subtype=73, Switchtype=0, Options=Options).Create()
+            else:
+                Domoticz.Device(Name=Name, Unit=Id, TypeName=Type, Options=Options).Create()
+                if ('Cooling' in Name or 'Defrost' in Name) and 'Out' in Name:
+                    Device = Devices[Id]
+                    Device.Update(nValue=Device.nValue, sValue=Device.sValue, Switchtype=4)
+        else:
+            Device = Devices[Id]
+            if Device.Options != Options:
+                Domoticz.Log(f"Updating sensor options for sensor '{Device.Name}'; Old value: '{Device.Options}'; New value: '{Options}'")
+                Device.Update(nValue=Device.nValue, sValue=Device.sValue, Options=Options)
+
+    def handleApiException(self, e: ApiException):
+        if(e.status == 401): # Unauthorized
+            Domoticz.Error('WeHeat login has expired, trying to login again...')
+            self.login()
+        elif(e.status == 429): # Too Many requests
+            Domoticz.Error('Request rate limit to the Weheat back-end exceeded')
+        elif(e.status >= 500 or e.status <= 599): # Service exception
+            Domoticz.Error(f"Weheat server side exception({e.status}): {e.reason}")
+        else:
+            Domoticz.Error(f"Unhandled HTTP exception: {e}")
 
 global _plugin
 _plugin = WeHeatPlugin()
@@ -406,39 +445,3 @@ def onDisconnect(Connection):
 def onHeartbeat():
     global _plugin
     _plugin.onHeartbeat()
-
-# Generic helper functions
-def DumpConfigToLog():
-    for x in Parameters:
-        if Parameters[x] != "":
-            Domoticz.Debug( "'" + x + "':'" + str(Parameters[x]) + "'")
-    Domoticz.Debug("Device count: " + str(len(Devices)))
-    for DeviceName in Devices:
-        Device = Devices[DeviceName]
-        Domoticz.Debug("Device ID:       '" + str(Device.DeviceID) + "'")
-    return
-
-# Source of definition:
-# https://github.com/wefabricate/wh-python/blob/main/weheat/abstractions/heat_pump.py
-# This is apparantly different from https://github.com/wefabricate/wh-python/blob/main/weheat/models/heat_pump_status_enum.py
-# Use this for text sensor, so convert to string
-def ConvertHeatPumpStatus(number: int) -> str:
-    match number:
-       case 40:
-           return "Standby"
-       case 70:
-           return "Heating"
-       case c if 130 <= c < 140:
-           return "Cooling"
-       case 150:
-           return "Hot water"
-       case 160:
-           return "Anti legionella"
-       case 170:
-           return "Selftest"
-       case 180:
-           return "Manual control"
-       case d if 200 <= d <= 240:
-           return "Defrost"
-       case _:
-           return "Unknown (raw value: " + str(number) + ")"
