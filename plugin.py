@@ -65,7 +65,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from keycloak import KeycloakOpenID
 from keycloak import KeycloakAuthenticationError, KeycloakPostError
-from typing import Optional
+from typing import Optional, Union
 from weheat import ApiClient, ApiException, Configuration
 from weheat.api import EnergyLogApi
 from weheat.abstractions import HeatPumpDiscovery, HeatPump
@@ -101,7 +101,7 @@ class WeHeatPlugin:
         self._hasCooling = False
         self._counter = 1
 
-    def login(self):
+    def login(self) -> None:
         Domoticz.Status('Logging into WeHeat backend...')
         self._KeyCloakOpenId = KeycloakOpenID(server_url=sAuthUrl,
                                               client_id=sClientId,
@@ -122,7 +122,7 @@ class WeHeatPlugin:
         self._RefreshToken = token_response['refresh_token']
         self._loggedIn = True
 
-    def refreshToken(self):
+    def refreshToken(self) -> None:
         if datetime.now() > self._Expiration - timedelta(seconds = 60):
             Domoticz.Log('Refreshing token...')
             try:
@@ -135,7 +135,7 @@ class WeHeatPlugin:
             self._Expiration = datetime.now() + timedelta(seconds = token_response['expires_in'])
             self._RefreshToken = token_response['refresh_token']
 
-    async def fetchSetup(self):
+    async def fetchSetup(self) -> None:
         discovery = HeatPumpDiscovery()
         try:
           heatpumps = await HeatPumpDiscovery.async_discover_active(api_url=sApiUrl, access_token=self._AccessToken)
@@ -156,7 +156,7 @@ class WeHeatPlugin:
         else:
             Domoticz.Status('Detected an all-electric configuration')
 
-    def GetValue(self, hp: HeatPump, Id: str):
+    def GetValue(self, hp: HeatPump, Id: str) -> Union [int, float, str, None]:
         if hasattr(hp, Id):
             return getattr(hp, Id)
         if Id in hp.raw_content:
@@ -164,7 +164,7 @@ class WeHeatPlugin:
         Domoticz.Error(f"Could not retrieve '{Id}' from HeatPump object")
         return None
 
-    def PostProcess(self, dev, sample, hp: Optional[HeatPump] = None):
+    def PostProcess(self, dev: Domoticz.Device, sample: Union [int, float, str], hp: Optional[HeatPump] = None) -> Union [int, float, str]:
         if dev.Type == 243 and dev.SubType == 19 and sample is None:
             sample = 'None'
         elif sample is None:
@@ -183,7 +183,7 @@ class WeHeatPlugin:
             sample *= 1000
         return sample
 
-    def UpdateDatabase(self, dev, sample):
+    def UpdateDatabase(self, dev: Domoticz.Device, sample: Union [int, float, str]) -> None:
         nValue = 0
         sValue = ""
         # TODO: check if a registry pattern (in form of a dict) can be beneficial here
@@ -207,22 +207,33 @@ class WeHeatPlugin:
         else:
             Domoticz.Error(f"Processing of sensor '{dev.Name}' with Type '{dev.Type}' and SubType '{dev.SubType}' not supported")
             return
+        # TODO: Revert to debug when we have sufficient prove everything works as expected
         Domoticz.Log(f"Device name '{dev.Name}', new nValue: '{nValue}', new sValue: '{sValue}'")
         dev.Update(nValue=nValue, sValue=sValue)
 
-    async def pollHeatpumpLog(self):
-        Domoticz.Log('Retrieving heatpump current log...')
+    async def pollLog(self, log_type: str) -> None:
+        Domoticz.Log(f"Retrieving {log_type} log...")
         heatpump = HeatPump(api_url=sApiUrl, uuid=self._HeatPumpUuid)
         try:
-            await heatpump.async_get_logs(self._AccessToken)
+            if log_type == sLogSourceHeatpump:
+                await heatpump.async_get_logs(self._AccessToken)
+            elif log_type == sLogSourceEnergy:
+                await heatpump.async_get_energy(self._AccessToken)
+            else:
+                Domoticz.Error(f"Unsupported log type requested: {log_type}. Expected: {sLogSourceHeatpump} or {sLogSourceEnergy}")
+                return
         except ApiException as e:
             self.handleApiException(e)
             return
 
         for unit in Devices:
             Device = Devices[unit]
-            if 'LogSource' in Device.Options and Device.Options['LogSource'] != sLogSourceHeatpump:
+            if Device.Options['LogSource'] != log_type:
                 continue
+            # TODO: Temporary statement until all Energy log fields can be retrieved reliably
+            if Device.Options['LogSource'] == sLogSourceEnergy and 'Total Energy In' not in Device.Name and 'Total Energy Out' not in Device.Name:
+                continue
+
             if 'ExternalId' in Device.Options and Device.Options['ExternalId'] == 'Math':
                 value = self.PostProcess(Device, 0, heatpump)
             else:
@@ -230,31 +241,7 @@ class WeHeatPlugin:
                 value = self.PostProcess(Device, value)
             self.UpdateDatabase(Device, value)
 
-    async def pollEnergyLog(self):
-        Domoticz.Log('Retrieving heatpump energy totals...')
-        heatpump = HeatPump(api_url=sApiUrl, uuid=self._HeatPumpUuid)
-        try:
-            await heatpump.async_get_energy(self._AccessToken)
-        except ApiException as e:
-            self.handleApiException(e)
-            return
-        # put in function? duplicate with pollHeatpumpLog
-        for unit in Devices:
-            Device = Devices[unit]
-            if 'LogSource' in Device.Options and Device.Options['LogSource'] != sLogSourceEnergy:
-                continue
-            # For now only supported on these 2 sensors until we can reliably get a value via 1 external id
-            # and we get a continous import to sample handover
-            if 'Total Energy In' not in Device.Name and 'Total Energy Out' not in Device.Name:
-                continue
-            if 'ExternalId' in Device.Options and Device.Options['ExternalId'] == 'Math':
-                value = self.PostProcess(Device, 0, heatpump)
-            else:
-                value = self.GetValue(heatpump, Device.Options['ExternalId'])
-                value = self.PostProcess(Device, value)
-            self.UpdateDatabase(Device, value)
-
-    async def importEnergyLogHistory(self, start_date: datetime):
+    async def importEnergyLogHistory(self, start_date: datetime) -> None:
         end_date = datetime.now(timezone.utc)
         config = Configuration(host=sApiUrl, access_token=self._AccessToken)
         async with ApiClient(configuration=config) as client:
@@ -406,12 +393,12 @@ class WeHeatPlugin:
 
         if self._counter % sEnergyLogInterval == 0:
             self._counter = 0
-            asyncio.run(self.pollEnergyLog())
+            asyncio.run(self.pollLog(sLogSourceEnergy))
         if self._counter % sHeatpumpLogInterval == 0:
-            asyncio.run(self.pollHeatpumpLog())
+            asyncio.run(self.pollLog(sLogSourceHeatpump))
         self._counter += 1
 
-    def createDevice(self, Id: int, Name: str, Type: str, Options: dict[str, str]):
+    def createDevice(self, Id: int, Name: str, Type: str, Options: dict[str, str]) -> None:
         if not Id in Devices:
             Domoticz.Status(f"Creating new sensor '{Name}' ({Id}) of type '{Type}' with options '{Options}'")
             if Type == "Switch":
