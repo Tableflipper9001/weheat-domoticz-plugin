@@ -3,7 +3,7 @@
 # Author: Jordy Knubben
 #
 """
-<plugin key="WeHeat" name="WeHeat" author="Jordy Knubben" version="0.0.4" wikilink="https://wiki.domoticz.com/Plugins" externallink="https://www.weheat.nl/">
+<plugin key="WeHeat" name="WeHeat" author="Jordy Knubben" version="0.0.4" shared="true" wikilink="https://wiki.domoticz.com/Plugins" externallink="https://www.weheat.nl/">
     <description>
         <h2>WeHeat</h2><br/>
         A plugin that reads out information about WeHeat heat pumps.<br/>
@@ -76,8 +76,8 @@ sApiUrl = 'https://api.weheat.nl/third_party'
 sRealmName = 'Weheat'
 sClientId = 'WeheatCommunityAPI'
 sClientSecret = ''
-sHeatpumpLogInterval = 4 # * 30 seconds
-sEnergyLogInterval =  30 # * 30 seconds
+sHeatpumpLogInterval = 4 # 4 * 30 = 2 minutes = Advised by WeHeat
+sEnergyLogInterval =  30 # 30 * 30 = 15 minutes = Advised by WeHeat
 sMinCOP = 0
 sMaxCOP = 10 * 100
 sLogSourceHeatpump = "Heatpump"
