@@ -82,12 +82,14 @@ sMinCOP = 0
 sMaxCOP = 10 * 100
 sLogSourceHeatpump = "Heatpump"
 sLogSourceEnergy = "Energy"
+sTimeFormat = "%Y-%m-%d"
 
 class WeHeatPlugin:
     enabled = False
 
     def __init__(self):
         self._AccessToken = ''
+        self._correctImport = False
         self._Expiration = datetime.now()
         self._RefreshToken = ''
         self._HeatPumpUuid = ''
@@ -159,7 +161,7 @@ class WeHeatPlugin:
             return getattr(hp, Id)
         if Id in hp.raw_content:
             return hp.raw_content[Id]
-        Domoticz.Error(f"Could not retrieve {Id} from HeatPump object")
+        Domoticz.Error(f"Could not retrieve '{Id}' from HeatPump object")
         return None
 
     def PostProcess(self, dev, sample, hp: Optional[HeatPump] = None):
@@ -175,6 +177,10 @@ class WeHeatPlugin:
         if 'Power from air' in dev.Name and hp is not None:
             sample = 0 if hp.power_output is None or hp.power_input is None else hp.power_output - hp.power_input
             sample = max(sample, 0) # cutoff negative values of defrost
+        if dev.Options['LogSource'] == sLogSourceEnergy:
+            if dev.SwitchType == 4:
+                sample *= -1
+            sample *= 1000
         return sample
 
     def UpdateDatabase(self, dev, sample):
@@ -188,14 +194,13 @@ class WeHeatPlugin:
         elif dev.Type == 243 and dev.SubType == 19: # Text
             sValue = str(sample)
         elif dev.Type == 243 and dev.SubType == 29: # kWh
-            if dev.sValue.count(';') > 0:
-                power, energy = map(float, dev.sValue.split(";"))
-            else:
-                energy = 0
             if 'EnergyMeterMode' in dev.Options and dev.Options['EnergyMeterMode'] is '1':
+                power, energy = map(float, (dev.sValue or "0;0.0").split(";"))
+                energy += sample # WeHeat power sensors are in Watt
+                # Dang need 2 params here otherwise the calculaton could go to postprocessing
                 sValue = f"{sample:.1f};{energy:.1f}"
             else:
-                sample = energy + sample
+                # WeHeat energy sensors are in kWh
                 sValue = f"{0:.1f};{sample:.1f}"
         elif dev.Type == 244: # Switch
             nValue = 0 if not isinstance(sample, int) else sample
@@ -226,7 +231,6 @@ class WeHeatPlugin:
             self.UpdateDatabase(Device, value)
 
     async def pollEnergyLog(self):
-        return
         Domoticz.Log('Retrieving heatpump energy totals...')
         heatpump = HeatPump(api_url=sApiUrl, uuid=self._HeatPumpUuid)
         try:
@@ -238,6 +242,10 @@ class WeHeatPlugin:
         for unit in Devices:
             Device = Devices[unit]
             if 'LogSource' in Device.Options and Device.Options['LogSource'] != sLogSourceEnergy:
+                continue
+            # For now only supported on these 2 sensors until we can reliably get a value via 1 external id
+            # and we get a continous import to sample handover
+            if 'Total Energy In' not in Device.Name and 'Total Energy Out' not in Device.Name:
                 continue
             if 'ExternalId' in Device.Options and Device.Options['ExternalId'] == 'Math':
                 value = self.PostProcess(Device, 0, heatpump)
@@ -257,28 +265,41 @@ class WeHeatPlugin:
                 return
 
             if response.status_code == 200:
-                for energyLog in response.data:
-                    energyLog = vars(energyLog)
-                    Domoticz.Status(f"Importing data for date {energyLog['time_bucket']}")
-                    for unit in Devices:
-                        Device = Devices[unit]
-                        if 'LogSource' in Device.Options and Device.Options['LogSource'] != sLogSourceEnergy:
-                            continue
+                for unit in Devices:
+                    Device = Devices[unit]
+                    if 'LogSource' in Device.Options and Device.Options['LogSource'] != sLogSourceEnergy:
+                        continue
+                    if 'Total Energy In' not in Device.Name and 'Total Energy Out' not in Device.Name:
+                        continue
 
-                        power, energy = map(float, Device.sValue.split(";"))
+                    accumulate = 0 # Good for now TBD if we can get the value of the start date
+                    if 'AddDBLogEntry' not in Device.Options:
+                            Device.Options['AddDBLogEntry'] = 'true'
+                            Device.Update(nValue=Device.nValue, sValue=Device.sValue, Options=Device.Options)
+
+                    for energyLog in response.data:
+                        energyLog = vars(energyLog)
                         if 'Total Energy In' in Device.Name:
-                            total = sum(value for key, value in energyLog.items() if key.startswith("total_ein"))
+                            today = sum(value for key, value in energyLog.items() if key.startswith("total_ein"))
                         elif 'Total Energy Out' in Device.Name:
-                            total = sum(value for key, value in energyLog.items() if key.startswith("total_e_out"))
+                            today = sum(value for key, value in energyLog.items() if key.startswith("total_e_out"))
                         else:
-                            total = energyLog[Device.Options['ExternalId']]
-                        total *= 1000
-                        total += energy
-                        sValue = f"{0:.1f};{total:.1f};{datetime.strftime(energyLog['time_bucket'],'%Y-%m-%d')}"
-                        # Device.Options['AddDBLogEntry'] = 'true'
-                        # Device.Update(nValue=0, sValue=sValue)
-                        # Device.Options['AddDBLogEntry'] = 'false'
-                        Domoticz.Log(f"{sValue}")
+                            today = energyLog[Device.Options['ExternalId']]
+                        if Device.SwitchType == 4:
+                            today *= -1
+                        today *= 1000
+                        total = today + accumulate
+                        # Don't ask me why this makes sense, but this is stored (in 2025.2) as COUNTER;VALUE;DATE in the table
+                        sValue = f"{total:.1f};{today:.1f};{datetime.strftime(energyLog['time_bucket'],'%Y-%m-%d')}"
+                        Domoticz.Status(f"Importing: {Device.Name}<=>{sValue}")
+                        Device.Update(nValue=0, sValue=sValue)
+                        accumulate = total
+
+                    self._correctImport = True
+                    Device.Options.pop('AddDBLogEntry', None)
+                    # Disable History modification AND make today connect to the just imported data
+                    # Here the meaning is different: Power; Energy
+                    Device.Update(nValue=Device.nValue, sValue=f"{0:.1f};{total:.1f}", Options=Device.Options)
 
     def onStart(self):
         Domoticz.Status('WeHeat plugin is starting')
@@ -338,9 +359,9 @@ class WeHeatPlugin:
 
         if 'Mode1' in Parameters:
             start_date = Parameters['Mode1']
-            timeformat = "%Y-%m-%d"
+
             try:
-                datetime.strptime(start_date, timeformat)
+                datetime.strptime(start_date, sTimeFormat)
                 Domoticz.Log(f"Import date specified, starting Energy Log import from {start_date} to now...")
                 asyncio.run(self.importEnergyLogHistory(start_date))
             except ValueError:
@@ -376,6 +397,12 @@ class WeHeatPlugin:
         if not self._readyForWork:
             return
         self.refreshToken()
+
+        if self._correctImport and datetime.now().hour == 0 and datetime.now().minute > 15:
+            start = datetime.now()
+            start = start - timedelta(minutes=start.minute + 1)
+            self.importEnergyLogHistory(datetime.strftime(start, "%Y-%m-%d"))
+            self._correctImport = False
 
         if self._counter % sEnergyLogInterval == 0:
             self._counter = 0
