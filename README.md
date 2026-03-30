@@ -15,16 +15,15 @@ To create the virtual environment:
 * Add to your startupscript: export PYTHONPATH=<paths>:${PYTHONPATH}
 
 The advised paths to add are:
-* <path to virtual environment>
-* <path to virtual environment>/lib/site-packages
+* \<path to virtual environment\>
+* \<path to virtual environment\>/lib/site-packages
 
 Also see:
 See https://wiki.domoticz.com/Using_Python_plugins and
 https://zigbeefordomoticz.github.io/wiki/en-eng/HowTo_PythonVirtualEnv.html
 
 Dependencies of the plugin:
-* python-keycloak
-* weheat
+* See requirements.txt
 
 TODO: Cristalize instruction for systemd configuration file
 TODO: Cristalize instruction for windows users
@@ -33,24 +32,27 @@ TODO: Cristalize instruction for windows users
 See the plugin description in the Domoticz hardware tab
 
 ## Known issues
-* When restarting the plugin hits an ImportError on keycloak and weheat.
+* When restarting the plugin hits an ImportError on PyO3 (internal dependency of python-keycloak)
   This cannot be resolved at this moment in time.
-  Restart Domoticz as a work around.
+    * Please use Domoticz 2026.1 and later, the plugin will load in shared mode to resolve the pyO3 import / sub interpreter errors
 * Only 1 heatpump is supported per account, there is no reason to assume more right now
-* No hot water sensors yet
-* When Device Options change this can either be resolved by deleting the sensor (and history) or by modifying the DB offline.
-Check if we can do this from code instead on load time.
-* The 'generic functions' related to weheat should be removed from global and put in the class (something similar as private)
-* The outside air temperature can be added, this may be convenient for mapping flow, return and air temp to COP
+    * If required make an issue, this should be solvable without too much effort (via a mode variable with the id/uuid and multiple hardware entries)
+* Update to weheat >2026.2.28 is pending to work with energy aggregate  
 
 ## Release history
 
 ### v0.0.4
-* Create default case for status codes not in the API definition
-* Limit COP in range 0 to 10. COP becomes negative in defrost cycles and may get unreleastic peaks due to bad sample period.
-* Fix the state variable not being of HeatPumpStatusEnum type, instead State from HeatPump
-* Stop the plugin from self (unfinished)
-* Add the outside air temperature sensors
+* Refactor most of the plugin
+    * Integrate newer wh-python version using the thirdparty API endpoint
+    * Perform most sensor calculation via WeHeat abstraction, provided via wh-python
+    * Refactor HTTP error handling into its own function and make generic for all calls
+    * Add outside air temperature sensors
+    * Fix the PyO3 import bug
+    * Add TotalEnergyAggregate sensors and add functionality to import the history for these sensors
+    * Update sensor options from plugin when out-of-date
+    * TODO: Perform COP calculation on 15 minute basis with energy data (power is no longer available)
+* Given up on the idea to stop the plugin from itself when initialisation fails. 
+  This would accidently trigger in connection blackouts of a couple of minutes and therefor kill the plugin
 
 ### v0.0.3
 * Fix the compressor usage properly based on the used heatpump (different Pnominal)
