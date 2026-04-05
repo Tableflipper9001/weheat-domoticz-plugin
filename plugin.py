@@ -421,7 +421,7 @@ class WeHeatPlugin:
     def deleteDevice(self, Id: int, Name: str, Type: str, Options: dict[str, str]) -> None:
         if Id in Devices:
             Domoticz.Status(f"Deleting sensor '{Name}' ({Id}) of type '{Type}' with options '{Options}'")
-            
+
     def handleApiException(self, e: ApiException):
         if(e.status == 401): # Unauthorized
             Domoticz.Error('WeHeat login has expired, trying to login again...')
