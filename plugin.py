@@ -58,8 +58,6 @@ sApiUrl = 'https://api.weheat.nl/third_party'
 sRealmName = 'Weheat'
 sClientId = 'HomeAssistantAPI'
 sClientSecret = 'TqpNpiJDKbGXF8jaL9D1Y8yzl1pI1Fly'
-#sClientId = 'WeheatCommunityAPI'
-#sClientSecret = ''
 sHeatpumpLogInterval = 4 # 4 * 30 = 2 minutes = Advised by WeHeat
 sEnergyLogInterval =  30 # 30 * 30 = 15 minutes = Advised by WeHeat
 sMinCOP = 0
