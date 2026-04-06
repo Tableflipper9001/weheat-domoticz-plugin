@@ -296,8 +296,10 @@ class WeHeatPlugin:
                             today *= -1
                         today *= 1000
                         total = today + accumulate
+                        offset = energyLog['time_bucket'].astimezone().tzinfo.utcoffset(None)
+                        timestamp = datetime.strftime(energyLog['time_bucket'] + offset, '%Y-%m-%d')
                         # Don't ask me why this makes sense, but this is stored (in 2025.2) as COUNTER;VALUE;DATE in the table
-                        sValue = f"{total:.1f};{today:.1f};{datetime.strftime(energyLog['time_bucket'],'%Y-%m-%d')}"
+                        sValue = f"{total:.1f};{today:.1f};{timestamp}"
                         Domoticz.Status(f"Importing: {Device.Name}<=>{sValue}")
                         Device.Update(nValue=0, sValue=sValue)
                         accumulate = total
