@@ -161,10 +161,27 @@ class WeHeatPlugin:
         if sample is None:
             return None
 
-        if 'COP' in dev.Name:
-            #ein = sum(value for key, value in hp.raw_content.items() if key.startswith("total_ein"))
-            #eout = sum(value for key, value in hp.raw_content.items() if key.startswith("total_e_out"))
-            sample = sample * 100
+        if 'COP' in dev.Name and hp is not None:
+            # TODO: Temporary patch  remove these additions when wh-python is patched
+            raw_content = hp.raw_content
+            raw_content['total_ein_heating'] = hp.energy_in_heating
+            raw_content['total_ein_heating_defrost'] = hp.energy_in_defrost
+            #raw_content['total_ein_standby'] = hp.energy_in_standby
+            raw_content['total_ein_cooling'] = hp.energy_in_cooling
+            raw_content['total_e_out_heating'] = hp.energy_out_heating
+            raw_content['total_e_out_heating_defrost'] = hp.energy_out_defrost
+            raw_content['total_e_out_cooling'] = hp.energy_out_cooling
+            try:
+                ein = sum(value for key, value in raw_content.items() if key.startswith("total_ein")) * 1000
+                eout = sum(value for key, value in raw_content.items() if key.startswith("total_e_out")) * 1000
+                eout_prev = float(Devices[25].sValue.split(';')[1])
+                ein_prev = float(Devices[20].sValue.split(';')[1])
+                sample = (eout - eout_prev) / (ein - ein_prev) * 100
+                Domoticz.Log(f"COP = ({eout} - {eout_prev}) / ({ein} - {ein_prev}) * 100 = {sample}")
+            except (IndexError, ValueError):
+                return None
+            except ZeroDivisionError:
+                return 0
             sample = max(sample, sMinCOP) # cutoff negative to MinCOP
             sample = min(sample, sMaxCOP) # cutoff positive beyond MaxCOP
         # TODO: Remove, power values are no longer being updated via the API
@@ -176,7 +193,7 @@ class WeHeatPlugin:
             # hp.energy_out_defrost is negative in sign, so remove 1x to correct addition in hp.energy_output 
             # and 1x to process it as it should have been
             sample = hp.energy_output + 2 * hp.energy_out_defrost
-        if dev.Options['LogSource'] == sLogSourceEnergy:
+        if dev.Options['LogSource'] == sLogSourceEnergy and 'COP' not in dev.Name:
             if dev.SwitchType == 4:
                 sample *= -1
             sample *= 1000
@@ -259,7 +276,7 @@ class WeHeatPlugin:
                     Device = Devices[unit]
                     if 'LogSource' in Device.Options and Device.Options['LogSource'] != sLogSourceEnergy:
                         continue
-                    if 'DHW' in Device.Name or 'Standby Energy In' in Device.Name:
+                    if 'DHW' in Device.Name or 'Standby Energy In' in Device.Name or 'COP' in Device.Name:
                         continue
 
                     accumulate = 0 # Good for now TBD if we can get the value of the start date
@@ -311,11 +328,11 @@ class WeHeatPlugin:
         self.createDevice(6 , "Heatpump return temperature"          , "Temperature", { 'LogSource': sLogSourceHeatpump, 'ExternalId': 't_water_in'})
         self.createDevice(17, "Outside air temperature in"           , "Temperature", { 'LogSource': sLogSourceHeatpump, 'ExternalId': 't_air_in'})
         self.createDevice(18, "Outside air temperature out"          , "Temperature", { 'LogSource': sLogSourceHeatpump, 'ExternalId': 't_air_out'})
-        self.createDevice(7 , "Electrical power"                     , "kWh"        , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'power_input' , 'EnergyMeterMode': '1'})
-        self.createDevice(8 , "Heat power"                           , "kWh"        , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'power_output', 'EnergyMeterMode': '1'})
+        self.createDevice(7 , "Electrical power"                     , "kWh"        , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'power_input' , 'EnergyMeterMode': '1'}) # TODO: delete, no longer part of the API
+        self.createDevice(8 , "Heat power"                           , "kWh"        , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'power_output', 'EnergyMeterMode': '1'}) # TODO: delete, no longer part of the API
         self.createDevice(9 , "Compressor usage"                     , "Percentage" , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'compressor_percentage'})
-        self.createDevice(10, "COP"                                  , "Percentage" , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'cop'})
-        self.deleteDevice(11, "Power from air"                       , "kWh"        , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'Math'}) # Instant power values no longer part of the API
+        self.createDevice(10, "COP"                                  , "Percentage" , { 'LogSource': sLogSourceEnergy  , 'ExternalId': 'Math'})
+        self.createDevice(11, "Power from air"                       , "kWh"        , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'Math'})
         self.createDevice(12, "State"                                , "Text"       , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'heat_pump_state'})
         self.createDevice(13, "Cooling state"                        , "Text"       , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'cooling_status'})
         self.createDevice(14, "Error"                                , "Text"       , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'error'})
@@ -387,7 +404,7 @@ class WeHeatPlugin:
             return
         self.refreshToken()
 
-        if self._correctImport and datetime.now().hour == 0 and datetime.now().minute > 15:
+        if self._correctImport and datetime.now().hour == 1 and datetime.now().minute > 0:
             start = datetime.now()
             start = start - timedelta(minutes=start.minute + 1)
             self.importEnergyLogHistory(datetime.strftime(start, "%Y-%m-%d"))
