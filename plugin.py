@@ -129,8 +129,7 @@ class WeHeatPlugin:
             Domoticz.Status('WARNING: response data contains more than 1 heatpump, picking the first one!')
         self._HeatPumpUuid = heatpumps[0].uuid
         self._hasDhw = heatpumps[0].has_dhw
-        #self._hasChBoiler = heatpumps[0].has_ch_boiler
-        self._hasChBoiler = True
+        self._hasChBoiler = heatpumps[0].has_ch_boiler
         Domoticz.Status("Using heatpump UUID '" + self._HeatPumpUuid + "'")
         if self._hasChBoiler:
             Domoticz.Status('Detected a hybrid configuration')
@@ -141,17 +140,8 @@ class WeHeatPlugin:
         if hasattr(hp, Id):
             return getattr(hp, Id)
 
-        # TODO: Temporary patch  remove these additions when wh-python is patched
-        raw_content = hp.raw_content
-        raw_content['total_ein_heating'] = hp.energy_in_heating
-        raw_content['total_ein_heating_defrost'] = hp.energy_in_defrost
-        #raw_content['total_ein_standby'] = hp.energy_in_standby
-        raw_content['total_ein_cooling'] = hp.energy_in_cooling
-        raw_content['total_e_out_heating'] = hp.energy_out_heating
-        raw_content['total_e_out_heating_defrost'] = hp.energy_out_defrost
-        raw_content['total_e_out_cooling'] = hp.energy_out_cooling
-        if Id in raw_content:
-            return raw_content[Id]
+        if Id in hp.raw_content:
+            return hp.raw_content[Id]
         Domoticz.Error(f"Could not retrieve '{Id}' from HeatPump object")
         return None
 
@@ -162,18 +152,9 @@ class WeHeatPlugin:
             return None
 
         if 'COP' in dev.Name and hp is not None:
-            # TODO: Temporary patch  remove these additions when wh-python is patched
-            raw_content = hp.raw_content
-            raw_content['total_ein_heating'] = hp.energy_in_heating
-            raw_content['total_ein_heating_defrost'] = hp.energy_in_defrost
-            #raw_content['total_ein_standby'] = hp.energy_in_standby
-            raw_content['total_ein_cooling'] = hp.energy_in_cooling
-            raw_content['total_e_out_heating'] = hp.energy_out_heating
-            raw_content['total_e_out_heating_defrost'] = hp.energy_out_defrost
-            raw_content['total_e_out_cooling'] = hp.energy_out_cooling
             try:
-                ein = sum(value for key, value in raw_content.items() if key.startswith("total_ein")) * 1000
-                eout = sum(value for key, value in raw_content.items() if key.startswith("total_e_out")) * 1000
+                ein = hp.energy_total * 1000
+                eout = hp.energ_output * 1000
                 eout_prev = float(Devices[25].sValue.split(';')[1])
                 ein_prev = float(Devices[20].sValue.split(';')[1])
                 sample = (eout - eout_prev) / (ein - ein_prev) * 100
@@ -188,11 +169,6 @@ class WeHeatPlugin:
         if 'Power from air' in dev.Name and hp is not None:
             sample = 0 if hp.power_output is None or hp.power_input is None else hp.power_output - hp.power_input
             sample = max(sample, 0) # cutoff negative values of defrost
-        # TODO: Correct energy out calculation for now, check how to add to wh-python without breaking HA integration
-        if 'Total Energy Out' in dev.Name and hp is not None:
-            # hp.energy_out_defrost is negative in sign, so remove 1x to correct addition in hp.energy_output 
-            # and 1x to process it as it should have been
-            sample = hp.energy_output + 2 * hp.energy_out_defrost
         if dev.Options['LogSource'] == sLogSourceEnergy and 'COP' not in dev.Name:
             if dev.SwitchType == 4:
                 sample *= -1
@@ -276,7 +252,8 @@ class WeHeatPlugin:
                     Device = Devices[unit]
                     if 'LogSource' in Device.Options and Device.Options['LogSource'] != sLogSourceEnergy:
                         continue
-                    if 'DHW' in Device.Name or 'Standby Energy In' in Device.Name or 'COP' in Device.Name:
+                    # TODO: Limit statement to COP or Math external id
+                    if 'COP' in Device.Name:
                         continue
 
                     accumulate = 0 # Good for now TBD if we can get the value of the start date
@@ -349,7 +326,7 @@ class WeHeatPlugin:
         self.createDevice(23, "Standby Energy In"                    , "kWh"        , { 'LogSource': sLogSourceEnergy  , 'ExternalId': 'total_ein_standby'})
         self.createDevice(24, "Cooling Energy In"                    , "kWh"        , { 'LogSource': sLogSourceEnergy  , 'ExternalId': 'total_ein_cooling'})
 
-        self.createDevice(25, "Total Energy Out"                     , "kWh"        , { 'LogSource': sLogSourceEnergy  , 'ExternalId': 'Math'})
+        self.createDevice(25, "Total Energy Out"                     , "kWh"        , { 'LogSource': sLogSourceEnergy  , 'ExternalId': 'energy_output'})
         self.createDevice(26, "Heating Energy Out"                   , "kWh"        , { 'LogSource': sLogSourceEnergy  , 'ExternalId': 'total_e_out_heating'})
         self.createDevice(27, "Heating Defrost Energy Out"           , "kWh"        , { 'LogSource': sLogSourceEnergy  , 'ExternalId': 'total_e_out_heating_defrost'})
         self.createDevice(28, "Cooling Energy Out"                   , "kWh"        , { 'LogSource': sLogSourceEnergy  , 'ExternalId': 'total_e_out_cooling'})
