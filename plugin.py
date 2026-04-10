@@ -255,9 +255,9 @@ class WeHeatPlugin:
                     for energyLog in response.data:
                         energyLog = vars(energyLog)
                         if 'Total Energy In' in Device.Name:
-                            today = sum(value for key, value in energyLog.items() if key.startswith("total_ein"))
+                            today = sumStartsWith(energyLog, "total_ein")
                         elif 'Total Energy Out' in Device.Name:
-                            today = sum(value for key, value in energyLog.items() if key.startswith("total_e_out"))
+                            today = sumStartsWith(energyLog, "total_e_out")
                         else:
                             today = energyLog[Device.Options['ExternalId']]
                         if Device.SwitchType == 4:
