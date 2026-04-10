@@ -15,8 +15,8 @@ To create the virtual environment:
 * Add to your startupscript: export PYTHONPATH=<paths>:${PYTHONPATH}
 
 The advised paths to add are:
-* \<path to virtual environment\>
-* \<path to virtual environment\>/lib/site-packages
+* &lt;path to virtual environment&gt;
+* &lt;path to virtual environment&gt;/lib/site-packages
 
 Also see:
 See https://wiki.domoticz.com/Using_Python_plugins and
@@ -29,13 +29,13 @@ TODO: Cristalize instruction for windows users
 See the createDevice table  in the onStart function of plugin.py
 
 ## Known issues
-Issue: When restarting the plugin hits an ImportError on PyO3 (internal dependency of python-keycloak)
+Issue: When restarting the plugin hits an ImportError on PyO3 (internal dependency of python-keycloak) <br>
 Solution: Please use Domoticz 2026.1 and later, the plugin will load in shared mode to resolve the pyO3 import / sub interpreter errors
 
-Issue: Only 1 heatpump is supported per account, there is no reason to assume more right now
+Issue: Only 1 heatpump is supported per account, there is no reason to assume more right now <br>
 Solution: If required make an issue, this should be solvable without too much effort (via a mode variable with the id/uuid and multiple hardware entries)
 
-Issue: importing energy data only works from the placement date
+Issue: importing energy data only works from the placement date <br>
 Solution: To be devised if the database entry of a specific date can be retrieved without too much hastle
 
 ## Release history
