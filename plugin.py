@@ -3,7 +3,7 @@
 # Author: Jordy Knubben
 #
 """
-<plugin key="WeHeat" name="WeHeat" author="Jordy Knubben" version="0.0.4" shared="true" wikilink="https://wiki.domoticz.com/Plugins" externallink="https://www.weheat.nl/">
+<plugin key="WeHeat" name="WeHeat" author="Jordy Knubben" version="0.0.5" shared="true" wikilink="https://wiki.domoticz.com/Plugins" externallink="https://www.weheat.nl/">
     <description>
         <h2>WeHeat</h2><br/>
         A plugin that reads out information about WeHeat heat pumps.<br/>
@@ -164,7 +164,6 @@ class WeHeatPlugin:
                 return 0
             sample = max(sample, sMinCOP) # cutoff negative to MinCOP
             sample = min(sample, sMaxCOP) # cutoff positive beyond MaxCOP
-        # TODO: Remove, power values are no longer being updated via the API
         if dev.Options['LogSource'] == sLogSourceEnergy and 'COP' not in dev.Name:
             sample *= 1000
             if dev.SwitchType == 4:
@@ -218,9 +217,6 @@ class WeHeatPlugin:
         for unit in Devices:
             Device = Devices[unit]
             if Device.Options['LogSource'] != log_type:
-                continue
-            # TODO: Temporary statement until all Energy log fields can be retrieved reliably
-            if Device.Options['LogSource'] == sLogSourceEnergy and ('DHW' in Device.Name or 'Standby Energy In' in Device.Name):
                 continue
 
             if 'ExternalId' in Device.Options and Device.Options['ExternalId'] == 'Math':
