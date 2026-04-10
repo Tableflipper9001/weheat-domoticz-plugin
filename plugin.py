@@ -195,7 +195,7 @@ class WeHeatPlugin:
             Domoticz.Error(f"Processing of sensor '{dev.Name}' with Type '{dev.Type}' and SubType '{dev.SubType}' not supported")
             return
         # TODO: Revert to debug when we have sufficient proof everything works as expected
-        Domoticz.Log(f"Device name '{dev.Name}', new nValue: '{nValue}', new sValue: '{sValue}'")
+        Domoticz.Debug(f"Device name '{dev.Name}', new nValue: '{nValue}', new sValue: '{sValue}'")
         dev.Update(nValue=nValue, sValue=sValue)
 
     async def pollLog(self, log_type: str) -> None:
@@ -455,3 +455,6 @@ def onDisconnect(Connection):
 def onHeartbeat():
     global _plugin
     _plugin.onHeartbeat()
+
+def sumStartsWith(data: dict, start: str) -> float:
+    return sum(value for key, value in data.items() if key.startswith(start))
