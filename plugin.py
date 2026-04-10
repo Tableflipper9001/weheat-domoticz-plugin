@@ -154,11 +154,10 @@ class WeHeatPlugin:
         if 'COP' in dev.Name and hp is not None:
             try:
                 ein = hp.energy_total * 1000
-                eout = hp.energ_output * 1000
+                eout = hp.energy_output * 1000
                 eout_prev = float(Devices[25].sValue.split(';')[1])
                 ein_prev = float(Devices[20].sValue.split(';')[1])
                 sample = (eout - eout_prev) / (ein - ein_prev) * 100
-                Domoticz.Log(f"COP = ({eout} - {eout_prev}) / ({ein} - {ein_prev}) * 100 = {sample}")
             except (IndexError, ValueError):
                 return None
             except ZeroDivisionError:
@@ -166,13 +165,10 @@ class WeHeatPlugin:
             sample = max(sample, sMinCOP) # cutoff negative to MinCOP
             sample = min(sample, sMaxCOP) # cutoff positive beyond MaxCOP
         # TODO: Remove, power values are no longer being updated via the API
-        if 'Power from air' in dev.Name and hp is not None:
-            sample = 0 if hp.power_output is None or hp.power_input is None else hp.power_output - hp.power_input
-            sample = max(sample, 0) # cutoff negative values of defrost
         if dev.Options['LogSource'] == sLogSourceEnergy and 'COP' not in dev.Name:
+            sample *= 1000
             if dev.SwitchType == 4:
                 sample *= -1
-            sample *= 1000
         return sample
 
     def UpdateDatabase(self, dev: Domoticz.Device, sample: Union [int, float, str]) -> None:
@@ -207,14 +203,14 @@ class WeHeatPlugin:
         Domoticz.Log(f"Retrieving {log_type} log...")
         heatpump = HeatPump(api_url=sApiUrl, uuid=self._HeatPumpUuid)
         try:
-            await heatpump.async_get_status(self._AccessToken)
-            #if log_type == sLogSourceHeatpump:
-            #    await heatpump.async_get_logs(self._AccessToken)
-            #elif log_type == sLogSourceEnergy:
-            #    await heatpump.async_get_energy(self._AccessToken)
-            #else:
-            #    Domoticz.Error(f"Unsupported log type requested: {log_type}. Expected: {sLogSourceHeatpump} or {sLogSourceEnergy}")
-            #    return
+            # Only query what we need so we are less likely to hit the maximum
+            if log_type == sLogSourceHeatpump:
+                await heatpump.async_get_logs(self._AccessToken)
+            elif log_type == sLogSourceEnergy:
+                await heatpump.async_get_energy(self._AccessToken)
+            else:
+                Domoticz.Error(f"Unsupported log type requested: {log_type}. Expected: {sLogSourceHeatpump} or {sLogSourceEnergy}")
+                return
         except ApiException as e:
             self.handleApiException(e)
             return
@@ -252,7 +248,6 @@ class WeHeatPlugin:
                     Device = Devices[unit]
                     if 'LogSource' in Device.Options and Device.Options['LogSource'] != sLogSourceEnergy:
                         continue
-                    # TODO: Limit statement to COP or Math external id
                     if 'COP' in Device.Name:
                         continue
 
@@ -307,11 +302,11 @@ class WeHeatPlugin:
         self.createDevice(6 , "Heatpump return temperature"          , "Temperature", { 'LogSource': sLogSourceHeatpump, 'ExternalId': 't_water_in'})
         self.createDevice(17, "Outside air temperature in"           , "Temperature", { 'LogSource': sLogSourceHeatpump, 'ExternalId': 't_air_in'})
         self.createDevice(18, "Outside air temperature out"          , "Temperature", { 'LogSource': sLogSourceHeatpump, 'ExternalId': 't_air_out'})
-        self.createDevice(7 , "Electrical power"                     , "kWh"        , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'power_input' , 'EnergyMeterMode': '1'}) # TODO: delete, no longer part of the API
-        self.createDevice(8 , "Heat power"                           , "kWh"        , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'power_output', 'EnergyMeterMode': '1'}) # TODO: delete, no longer part of the API
+        self.deleteDevice(7 , "Electrical power"                     , "kWh"        , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'power_input' , 'EnergyMeterMode': '1'}) # Obsolete
+        self.deleteDevice(8 , "Heat power"                           , "kWh"        , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'power_output', 'EnergyMeterMode': '1'}) # Obsolete
         self.createDevice(9 , "Compressor usage"                     , "Percentage" , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'compressor_percentage'})
         self.createDevice(10, "COP"                                  , "Percentage" , { 'LogSource': sLogSourceEnergy  , 'ExternalId': 'Math'})
-        self.createDevice(11, "Power from air"                       , "kWh"        , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'Math'})
+        self.deleteDevice(11, "Power from air"                       , "kWh"        , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'Math'}) # Obsolete
         self.createDevice(12, "State"                                , "Text"       , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'heat_pump_state'})
         self.createDevice(13, "Cooling state"                        , "Text"       , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'cooling_status'})
         self.createDevice(14, "Error"                                , "Text"       , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'error'})
@@ -351,6 +346,9 @@ class WeHeatPlugin:
                 asyncio.run(self.importEnergyLogHistory(start_date))
             except ValueError:
                 Domoticz.Error("Invalid date time format provided, expecting yyyy-mm-dd")
+
+        asyncio.run(self.pollLog(sLogSourceHeatpump))
+        asyncio.run(self.pollLog(sLogSourceEnergy))
 
     def onStop(self):
         Domoticz.Status("WeHeat plugin is stopping")
