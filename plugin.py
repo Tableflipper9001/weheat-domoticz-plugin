@@ -328,7 +328,7 @@ class WeHeatPlugin:
         Domoticz.Heartbeat(30)
         self._readyForWork = True
 
-        if 'Mode1' in Parameters:
+        if 'Mode1' in Parameters and Parameters['Mode1']:
             start_date = Parameters['Mode1']
 
             try:
