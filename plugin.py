@@ -202,14 +202,8 @@ class WeHeatPlugin:
         Domoticz.Log(f"Retrieving {log_type} log...")
         heatpump = HeatPump(api_url=sApiUrl, uuid=self._HeatPumpUuid)
         try:
-            # Only query what we need so we are less likely to hit the maximum
-            if log_type == sLogSourceHeatpump:
-                await heatpump.async_get_logs(self._AccessToken)
-            elif log_type == sLogSourceEnergy:
-                await heatpump.async_get_energy(self._AccessToken)
-            else:
-                Domoticz.Error(f"Unsupported log type requested: {log_type}. Expected: {sLogSourceHeatpump} or {sLogSourceEnergy}")
-                return
+            # Get everything at once to prevent a concurrent access exception
+            await heatpump.async_get_status(self._AccessToken)
         except ApiException as e:
             self.handleApiException(e)
             return
@@ -298,11 +292,11 @@ class WeHeatPlugin:
         self.createDevice(6 , "Heatpump return temperature"          , "Temperature", { 'LogSource': sLogSourceHeatpump, 'ExternalId': 't_water_in'})
         self.createDevice(17, "Outside air temperature in"           , "Temperature", { 'LogSource': sLogSourceHeatpump, 'ExternalId': 't_air_in'})
         self.createDevice(18, "Outside air temperature out"          , "Temperature", { 'LogSource': sLogSourceHeatpump, 'ExternalId': 't_air_out'})
-        self.deleteDevice(7 , "Electrical power"                     , "kWh"        , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'power_input' , 'EnergyMeterMode': '1'}) # Obsolete
-        self.deleteDevice(8 , "Heat power"                           , "kWh"        , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'power_output', 'EnergyMeterMode': '1'}) # Obsolete
+        self.createDevice(7 , "Electrical power"                     , "kWh"        , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'power_input' , 'EnergyMeterMode': '1'})
+        self.createDevice(8 , "Heat power"                           , "kWh"        , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'power_output', 'EnergyMeterMode': '1'})
         self.createDevice(9 , "Compressor usage"                     , "Percentage" , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'compressor_percentage'})
         self.createDevice(10, "COP"                                  , "Percentage" , { 'LogSource': sLogSourceEnergy  , 'ExternalId': 'Math'})
-        self.deleteDevice(11, "Power from air"                       , "kWh"        , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'Math'}) # Obsolete
+        self.createDevice(11, "Power from air"                       , "kWh"        , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'Math'})
         self.createDevice(12, "State"                                , "Text"       , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'heat_pump_state'})
         self.createDevice(13, "Cooling state"                        , "Text"       , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'cooling_status'})
         self.createDevice(14, "Error"                                , "Text"       , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'error'})
@@ -363,8 +357,8 @@ class WeHeatPlugin:
     def onMessage(self, Connection, Data):
         Domoticz.Status("onMessage called")
 
-    def onCommand(self, DeviceID, Unit, Command, Level, Color):
-        Domoticz.Status("onCommand called for Device " + str(DeviceID) + " Unit " + str(Unit) + ": Parameter '" + str(Command) + "', Level: " + str(Level))
+    def onCommand(self, Unit, Command, Level, Color):
+        Domoticz.Status("onCommand called for Unit ' " + str(Unit) + "': Parameter '" + str(Command) + "', Level: " + str(Level) + "', Color: '" + str(Color) + "'" )
 
     def onNotification(self, Name, Subject, Text, Status, Priority, Sound, ImageFile):
         Domoticz.Status("Notification: " + Name + "," + Subject + "," + Text + "," + Status + "," + str(Priority) + "," + Sound + "," + ImageFile)
@@ -384,7 +378,7 @@ class WeHeatPlugin:
             self._correctImport = False
 
         if self._counter % sEnergyLogInterval == 0:
-            self._counter = 0
+            self._counter = 1
             asyncio.run(self.pollLog(sLogSourceEnergy))
         if self._counter % sHeatpumpLogInterval == 0:
             asyncio.run(self.pollLog(sLogSourceHeatpump))
@@ -417,7 +411,7 @@ class WeHeatPlugin:
         elif(e.status == 429): # Too Many requests
             Domoticz.Error('Request rate limit to the Weheat back-end exceeded')
         elif(e.status >= 500 or e.status <= 599): # Service exception
-            Domoticz.Error(f"Weheat server side exception({e.status}): {e}")
+            Domoticz.Error(f"Weheat server side exception({e.status}): {e.body}")
         else:
             Domoticz.Error(f"Unhandled HTTP exception: {e}")
 
