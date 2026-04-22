@@ -40,6 +40,9 @@ Solution: To be devised if the database entry of a specific date can be retrieve
 
 ## Release history
 
+### v0.0.5
+* Fix bugs during early usage of v0.0.4
+
 ### v0.0.4
 * Refactor most of the plugin
     * Integrate newer wh-python version using the thirdparty API endpoint
