@@ -153,15 +153,15 @@ class WeHeatPlugin:
 
         if 'COP' in dev.Name and hp is not None:
             try:
-                ein = hp.energy_total * 1000
-                eout = hp.energy_output * 1000
+                ein = round(hp.energy_total * 1000, 1)
+                eout = round(hp.energy_output * 1000, 1)
                 eout_prev = float(Devices[25].sValue.split(';')[1])
                 ein_prev = float(Devices[20].sValue.split(';')[1])
                 sample = (eout - eout_prev) / (ein - ein_prev) * 100
             except (IndexError, ValueError):
                 return None
             except ZeroDivisionError:
-                return 0
+                return 0.0
             sample = max(sample, sMinCOP) # cutoff negative to MinCOP
             sample = min(sample, sMaxCOP) # cutoff positive beyond MaxCOP
         if dev.Options['LogSource'] == sLogSourceEnergy and 'COP' not in dev.Name:
