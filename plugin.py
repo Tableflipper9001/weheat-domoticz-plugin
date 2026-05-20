@@ -3,7 +3,7 @@
 # Author: Jordy Knubben
 #
 """
-<plugin key="WeHeat" name="WeHeat" author="Jordy Knubben" version="0.0.5" shared="true" wikilink="https://wiki.domoticz.com/Plugins" externallink="https://www.weheat.nl/">
+<plugin key="WeHeat" name="WeHeat" author="Jordy Knubben" version="1.0.0" shared="true" wikilink="https://wiki.domoticz.com/Plugins" externallink="https://www.weheat.nl/">
     <description>
         <h2>WeHeat</h2><br/>
         A plugin that reads out information about WeHeat heat pumps.<br/>
@@ -82,6 +82,7 @@ class WeHeatPlugin:
         self._hasDhw = False
         self._hasCooling = False
         self._counter = 1
+        self._compressorHasStarted = False
 
     def login(self) -> None:
         Domoticz.Status('Logging into WeHeat backend...')
@@ -151,6 +152,11 @@ class WeHeatPlugin:
         if sample is None:
             return None
 
+        if 'State' in dev.Name and 'STANDBY' in dev.sValue and 'HEATING' in str(sample):
+            self._compressorHasStarted = True
+        if 'Compressor starts' in dev.Name and self._compressorHasStarted:
+            sample = int(dev.sValue) + 1
+            self._compressorHasStarted = False
         if 'COP' in dev.Name and hp is not None:
             try:
                 ein = round(hp.energy_total * 1000, 1)
@@ -178,7 +184,7 @@ class WeHeatPlugin:
         if (dev.Type == 80 or
            (dev.Type == 243 and dev.SubType == 6)): # Temperature or Percentage
             sValue = f"{sample:.1f}"
-        elif dev.Type == 243 and dev.SubType == 19: # Text
+        elif (dev.Type == 243 and dev.SubType == 19) or dev.Type == 113: # Text or counter (integer based)
             sValue = str(sample)
         elif dev.Type == 243 and dev.SubType == 29: # kWh
             if 'EnergyMeterMode' in dev.Options and dev.Options['EnergyMeterMode'] is '1':
@@ -194,7 +200,6 @@ class WeHeatPlugin:
         else:
             Domoticz.Error(f"Processing of sensor '{dev.Name}' with Type '{dev.Type}' and SubType '{dev.SubType}' not supported")
             return
-        # TODO: Revert to debug when we have sufficient proof everything works as expected
         Domoticz.Debug(f"Device name '{dev.Name}', new nValue: '{nValue}', new sValue: '{sValue}'")
         dev.Update(nValue=nValue, sValue=sValue)
 
@@ -300,6 +305,7 @@ class WeHeatPlugin:
         self.createDevice(12, "State"                                , "Text"       , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'heat_pump_state'})
         self.createDevice(13, "Cooling state"                        , "Text"       , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'cooling_status'})
         self.createDevice(14, "Error"                                , "Text"       , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'error'})
+        self.createDevice(19, "Compressor starts"                    , "Counter"    , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'Math' })
         if self._hasChBoiler:
             self.createDevice(15, "Gas boiler state"                 , "Switch"     , { 'LogSource': sLogSourceHeatpump, 'ExternalId': 'control_bridge_status_decoded_gas_boiler'})
         else:
@@ -389,6 +395,8 @@ class WeHeatPlugin:
             Domoticz.Status(f"Creating new sensor '{Name}' ({Id}) of type '{Type}' with options '{Options}'")
             if Type == "Switch":
                 Domoticz.Device(Name=Name, Unit=Id, Type=244, Subtype=73, Switchtype=0, Options=Options).Create()
+            elif Type == "Counter":
+                Domoticz.Device(Name=Name, Unit=Id, Type=113, Subtype=0, Switchtype=3, Options=Options).Create()
             else:
                 Domoticz.Device(Name=Name, Unit=Id, TypeName=Type, Options=Options).Create()
                 if ('Cooling' in Name or 'Defrost' in Name) and 'Out' in Name:

@@ -40,6 +40,11 @@ Solution: To be devised if the database entry of a specific date can be retrieve
 
 ## Release history
 
+### v1.0.0
+* Fix some bugs from v0.0.5
+* Add sensor for amount of compressor starts to get a sense of the age
+* Made a major release since this should have happened in v0.0.4 already
+
 ### v0.0.5
 * Fix bugs during early usage of v0.0.4
 
