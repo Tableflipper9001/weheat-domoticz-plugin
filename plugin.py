@@ -154,9 +154,11 @@ class WeHeatPlugin:
 
         if 'State' in dev.Name and 'STANDBY' in dev.sValue and 'HEATING' in str(sample):
             self._compressorHasStarted = True
-        if 'Compressor starts' in dev.Name and self._compressorHasStarted:
-            sample = int(dev.sValue) + 1
-            self._compressorHasStarted = False
+        if 'Compressor starts' in dev.Name:
+            sample = int(dev.sValue)
+            if self._compressorHasStarted:
+                sample = sample + 1
+                self._compressorHasStarted = False
         if 'COP' in dev.Name and hp is not None:
             try:
                 ein = round(hp.energy_total * 1000, 1)
