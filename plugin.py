@@ -152,7 +152,7 @@ class WeHeatPlugin:
         if sample is None:
             return None
 
-        if 'State' in dev.Name and 'STANDBY' in dev.sValue and 'HEATING' in str(sample):
+        if 'State' in dev.Name and 'STANDBY' in dev.sValue and ('HEATING' in str(sample) or 'COOLING' in str(sample)):
             self._compressorHasStarted = True
         if 'Compressor starts' in dev.Name:
             sample = int(dev.sValue)
