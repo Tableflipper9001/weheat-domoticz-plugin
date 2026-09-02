@@ -12,32 +12,30 @@ To create the virtual environment:
 * python -m pip install --upgrade pip
 * python -m pip install --upgrade -r requirements.txt
 * deactivate
-* Add to your startupscript (see below): export PYTHONPATH=&lt;paths&gt;:${PYTHONPATH}
+* Add to your startupscript (see below): `export PYTHONPATH=&lt;paths&gt;:${PYTHONPATH}`
 
 The advised paths to add are:
 * &lt;path to virtual environment&gt;
-* &lt;path to virtual environment&gt;/lib/site-packages
+* &lt;path to virtual environment&gt;/lib/python&lt;version&gt;site-packages
 
 The following articles can be used for some of the basics:
 * https://wiki.domoticz.com/Using_Python_plugins and
 * https://zigbeefordomoticz.github.io/wiki/en-eng/HowTo_PythonVirtualEnv.html
 
 For SysVinit users (and users following the raspberry pi installation guide):
-* The original is in domoticz/domoticz.sh
-* It is likely copied to /etc/init.d/domoticz.sh
+* The original is in `domoticz/domoticz.sh`
+* It is likely copied to `/etc/init.d/domoticz.sh`
 * Add the PYTHONPATH line from above after the lines with a comment mark (#)
 
 For SystemD users:
 * Add to the `[Service]` block in your file: `EnvironmentFile=<path>/domoticz.env`
-* Add the PYTHONPATH line to the domoticz.env file
+* Add the PYTHONPATH line to the `domoticz.env` file
 * Remove the export from the line
 
 ### Plugin installation
-* Clone this repository in domoticz/plugins
+* Clone this repository in `domoticz/plugins`
 * Create hardware in domoticz
 * The parameters to be filled in should be straightforward enough
- 
-
 
 ## Supported sensors
 See the createDevice table  in the onStart function of plugin.py
