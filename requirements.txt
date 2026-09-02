@@ -1,3 +1,2 @@
 python-keycloak
 weheat >= 2026.4.8
-zeroconf

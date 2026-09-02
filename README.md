@@ -2,9 +2,9 @@
 A plugin to read out WeHeat heatpump data.
 
 ## Prerequisites and installation
-It is advisable to have the domoticz python distribution use a python virtual environment.
-For example Debian manages its python packages through apt and does not have the neccessary dependencies in apt before Debian 13 (trixie).
+It is advisable to have domoticz use a python virtual environment, the WeHeat package is not available as package in all Linux distros.
 
+### Python vritual environment installation instruction
 To create the virtual environment:
 * python(3) -m venv <path to virtual environment> (advise: put it next to the domoticz installation folder
 * cd <path to virtual environment>
@@ -12,18 +12,32 @@ To create the virtual environment:
 * python -m pip install --upgrade pip
 * python -m pip install --upgrade -r requirements.txt
 * deactivate
-* Add to your startupscript: export PYTHONPATH=<paths>:${PYTHONPATH}
+* Add to your startupscript (see below): export PYTHONPATH=&lt;paths&gt;:${PYTHONPATH}
 
 The advised paths to add are:
 * &lt;path to virtual environment&gt;
 * &lt;path to virtual environment&gt;/lib/site-packages
 
-Also see:
-See https://wiki.domoticz.com/Using_Python_plugins and
-https://zigbeefordomoticz.github.io/wiki/en-eng/HowTo_PythonVirtualEnv.html
+The following articles can be used for some of the basics:
+* https://wiki.domoticz.com/Using_Python_plugins and
+* https://zigbeefordomoticz.github.io/wiki/en-eng/HowTo_PythonVirtualEnv.html
 
-TODO: Cristalize instruction for systemd configuration file
-TODO: Cristalize instruction for windows users
+For SysVinit users (and users following the raspberry pi installation guide):
+* The original is in domoticz/domoticz.sh
+* It is likely copied to /etc/init.d/domoticz.sh
+* Add the PYTHONPATH line from above after the lines with a comment mark (#)
+
+For SystemD users:
+* Add to the `[Service]` block in your file: `EnvironmentFile=<path>/domoticz.env`
+* Add the PYTHONPATH line to the domoticz.env file
+* Remove the export from the line
+
+### Plugin installation
+* Clone this repository in domoticz/plugins
+* Create hardware in domoticz
+* The parameters to be filled in should be straightforward enough
+ 
+
 
 ## Supported sensors
 See the createDevice table  in the onStart function of plugin.py
@@ -37,6 +51,9 @@ Solution: If required make an issue, this should be solvable without too much ef
 
 Issue: importing energy data only works from the placement date <br>
 Solution: To be devised if the database entry of a specific date can be retrieved without too much hastle
+
+Issue: Readme does not take windows users into account
+Solution: Resolve when windows user has issues
 
 ## Release history
 
