@@ -6,13 +6,13 @@ It is advisable to have domoticz use a python virtual environment, the WeHeat pa
 
 ### Python vritual environment installation instruction
 To create the virtual environment:
-* python(3) -m venv <path to virtual environment> (advise: put it next to the domoticz installation folder
-* cd <path to virtual environment>
+* python(3) -m venv &lt;path to virtual environment&gt; (advise: put it next to the domoticz installation folder
+* cd &lt;path to virtual environment&gt;
 * . ./bin/activate
 * python -m pip install --upgrade pip
 * python -m pip install --upgrade -r requirements.txt
 * deactivate
-* Add to your startupscript (see below): `export PYTHONPATH=&lt;paths&gt;:${PYTHONPATH}`
+* Add to your startupscript (see below): `export PYTHONPATH=<paths>:${PYTHONPATH}`
 
 The advised paths to add are:
 * &lt;path to virtual environment&gt;
