@@ -4,19 +4,23 @@ A plugin to read out WeHeat heatpump data.
 ## Prerequisites and installation
 It is advisable to have domoticz use a python virtual environment, the WeHeat package is not available as package in all Linux distros.
 
+### Plugin installation
+* git clone https://github.com/Tableflipper9001/weheat-domoticz-plugin.git &lt;path_to_domoticz&gt;/plugins/WeHeat`
+
 ### Python vritual environment installation instruction
 To create the virtual environment:
 * python(3) -m venv &lt;path to virtual environment&gt; (advise: put it next to the domoticz installation folder
 * cd &lt;path to virtual environment&gt;
 * . ./bin/activate
 * python -m pip install --upgrade pip
+* cd &lt;path_to_domoticz&gt;/plugins/WeHeat
 * python -m pip install --upgrade -r requirements.txt
 * deactivate
 * Add to your startupscript (see below): `export PYTHONPATH=<paths>:${PYTHONPATH}`
 
 The advised paths to add are:
 * &lt;path to virtual environment&gt;
-* &lt;path to virtual environment&gt;/lib/python&lt;version&gt;site-packages
+* &lt;path to virtual environment&gt;/lib/python&lt;version&gt;/site-packages
 
 The following articles can be used for some of the basics:
 * https://wiki.domoticz.com/Using_Python_plugins and
@@ -32,8 +36,7 @@ For SystemD users:
 * Add the PYTHONPATH line to the `domoticz.env` file
 * Remove the export from the line
 
-### Plugin installation
-* Clone this repository in `domoticz/plugins`
+### Plugin initialisation
 * Create hardware in domoticz
 * The parameters to be filled in should be straightforward enough
 
