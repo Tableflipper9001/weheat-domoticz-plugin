@@ -5,7 +5,7 @@ A plugin to read out WeHeat heatpump data.
 It is advisable to have domoticz use a python virtual environment, the WeHeat package is not available as package in all Linux distros.
 
 ### Plugin installation
-* git clone https://github.com/Tableflipper9001/weheat-domoticz-plugin.git &lt;path_to_domoticz&gt;/plugins/WeHeat`
+* git clone https://github.com/Tableflipper9001/weheat-domoticz-plugin.git &lt;path_to_domoticz&gt;/plugins/WeHeat
 
 ### Python vritual environment installation instruction
 To create the virtual environment:
