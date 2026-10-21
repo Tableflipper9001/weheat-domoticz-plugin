@@ -44,6 +44,7 @@
 
 import Domoticz
 import asyncio
+import aiohttp
 from datetime import datetime, timedelta, timezone
 from keycloak import KeycloakOpenID
 from keycloak import KeycloakAuthenticationError, KeycloakPostError
@@ -100,6 +101,9 @@ class WeHeatPlugin:
             Domoticz.Error(f"Failed to send login request: {e}")
             Domoticz.Error('This plugin will not execute any logic and now ghost CPU cycles')
             return
+        except aiohttp.ClientConnectorError as e:
+            Domoticz.Error(f"Failed to connect to {sAuthUrl}")
+            return
         self._AccessToken = token_response['access_token']
         self._Expiration = datetime.now() + timedelta(seconds = token_response['expires_in'])
         self._RefreshToken = token_response['refresh_token']
@@ -114,6 +118,9 @@ class WeHeatPlugin:
                 Domoticz.Error(f"Failed to refresh token with: {e}")
                 Domoticz.Error('Trying again next cycle...')
                 return
+            except aiohttp.ClientConnectorError as e:
+                Domoticz.Error(f"Failed to connect to {sAuthUrl}")
+                return
             self._AccessToken = token_response['access_token']
             self._Expiration = datetime.now() + timedelta(seconds = token_response['expires_in'])
             self._RefreshToken = token_response['refresh_token']
@@ -124,6 +131,9 @@ class WeHeatPlugin:
           heatpumps = await HeatPumpDiscovery.async_discover_active(api_url=sApiUrl, access_token=self._AccessToken)
         except ApiException as e:
             self.handleApiException(e)
+            return
+        except aiohttp.ClientConnectorError as e:
+            Domoticz.Error(f"Failed to connect to {sApiUrl}")
             return
 
         if len(heatpumps) > 1:
@@ -214,6 +224,9 @@ class WeHeatPlugin:
         except ApiException as e:
             self.handleApiException(e)
             return
+        except aiohttp.ClientConnectorError as e:
+            Domoticz.Error(f"Failed to connect to {sApiUrl}")
+            return
 
         for unit in Devices:
             Device = Devices[unit]
@@ -238,6 +251,9 @@ class WeHeatPlugin:
                 response = await EnergyLogApi(client).api_v1_energy_logs_heat_pump_id_get_with_http_info(heat_pump_id=self._HeatPumpUuid, start_time=start_date, end_time=end_date, interval='Day')
             except ApiException as e:
                 self.handleApiException(e)
+                return
+            except aiohttp.ClientConnectorError as e:
+                Domoticz.Error(f"Failed to connect to {sApiUrl}")
                 return
 
             if response.status_code == 200:

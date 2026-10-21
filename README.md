@@ -58,6 +58,9 @@ Solution: Resolve when windows user has issues
 
 ## Release history
 
+### vx.x.x
+* Throw a single line error when aiohttp ConnectorError in case one of the endpoints is unavailable
+
 ### v1.0.0
 * Fix some bugs from v0.0.5
 * Add sensor for amount of compressor starts to get a sense of the age
