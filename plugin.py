@@ -170,6 +170,7 @@ class WeHeatPlugin:
                 sample = sample + 1
                 self._compressorHasStarted = False
         if 'COP' in dev.Name and hp is not None:
+            # TODO: create a function that retrieves a sensor by name instead of by id
             try:
                 ein = round(hp.energy_total * 1000, 1)
                 eout = round(hp.energy_output * 1000, 1)
@@ -179,7 +180,15 @@ class WeHeatPlugin:
             except (IndexError, ValueError):
                 return None
             except ZeroDivisionError:
-                return 0.0
+                state = str(self.GetValue(hp, 'heat_pump_state'))
+                # Sometimes the energy information is not updated yet resulting in 0/0
+                # In case the state is not STANDBY replicate the previous COP value
+                # This results in value continuity in the COP graph
+                # TODO: Add DHW, legionella and potentially others?
+                if 'HEATING' in state or 'COOLING' in state or 'DEFROST' in state:
+                    return float(Devices[10].sValue)
+                else:
+                    return 0.0
             sample = max(sample, sMinCOP) # cutoff negative to MinCOP
             sample = min(sample, sMaxCOP) # cutoff positive beyond MaxCOP
         if dev.Options['LogSource'] == sLogSourceEnergy and 'COP' not in dev.Name:
